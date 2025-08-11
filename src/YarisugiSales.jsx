@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from './contexts/AuthContext';
 import { 
   Search, Plus, Upload, Send, Calendar, Phone, Mail, ChevronRight, 
   FileText, AlertCircle, Check, X, MessageSquare, Clock, User, 
@@ -9,7 +10,7 @@ import {
   Trash2, Eye, Share2, Copy, Bookmark, Tag, Paperclip, Image, 
   Mic, Smile, ThumbsUp, Heart, Star, Flag, Archive, FolderOpen, 
   Database, Shield, Lock, Unlock, Key, Info, HelpCircle, CheckCircle, 
-  XCircle, AlertTriangle, Brain, LineChart, GitBranch
+  XCircle, AlertTriangle, Brain, LineChart, GitBranch, LogOut
 } from 'lucide-react';
 
 // 新しいコンポーネントとカスタムフックのインポート
@@ -18,6 +19,7 @@ import {
 
 const YarisugiDashboard = () => {
   const navigate = useNavigate();
+  const { currentUser, logout } = useAuth();
   const [activePage, setActivePage] = useState('top');
   const [showApproval, setShowApproval] = useState(false);
   const [customersPerPage, setCustomersPerPage] = useState(50);
@@ -808,7 +810,39 @@ const YarisugiDashboard = () => {
             🔔
             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">3</span>
           </div>
+          
+          {/* ユーザー情報 */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="hidden sm:block text-right">
+              <div className="text-sm font-medium text-gray-900">
+                {currentUser?.displayName || currentUser?.email?.split('@')[0] || 'ユーザー'}
+              </div>
+              <div className="text-xs text-gray-500">
+                {currentUser?.email}
+              </div>
+            </div>
+            <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+              {currentUser?.displayName?.charAt(0) || currentUser?.email?.charAt(0) || 'U'}
+            </div>
+          </div>
+          
           <Button size="sm">CSVエクスポート</Button>
+          
+          {/* ログアウトボタン */}
+          <button
+            onClick={async () => {
+              try {
+                await logout();
+                navigate('/login');
+              } catch (error) {
+                console.error('ログアウトエラー:', error);
+              }
+            }}
+            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            title="ログアウト"
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
         </div>
       </div>
 
