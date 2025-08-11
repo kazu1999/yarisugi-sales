@@ -74,14 +74,45 @@ const CustomerDetailPage = () => {
     const fetchCustomerData = async () => {
       setLoading(true);
       try {
-        // サンプルデータ（実際はAPIから取得）
-        const customerData = {
+        // 顧客IDに基づいてサンプルデータを取得
+        const customerDataMap = {
+          'tech-solution-001': {
+            id: 'tech-solution-001',
+            name: '株式会社テックソリューション',
+            contact: '田中一郎',
+            industry: 'IT・通信',
+            email: 'tanaka@tech-solution.com',
+            phone: '03-1234-5678',
+            status: '商談中'
+          },
+          'global-trading-002': {
+            id: 'global-trading-002',
+            name: '株式会社グローバル商事',
+            contact: '佐藤花子',
+            industry: '小売・流通',
+            email: 'sato@global-trading.co.jp',
+            phone: '03-2345-6789',
+            status: '成約'
+          },
+          'manufacturing-003': {
+            id: 'manufacturing-003',
+            name: '株式会社製造工業',
+            contact: '鈴木次郎',
+            industry: '製造業',
+            email: 'suzuki@manufacturing.com',
+            phone: '03-3456-7890',
+            status: '新規'
+          }
+        };
+        
+        const customerData = customerDataMap[customerId] || {
           id: customerId,
-          name: '株式会社テックソリューション',
-          contact: '田中一郎',
-          industry: 'IT・通信',
-          email: 'tanaka@techsolution.co.jp',
-          status: '商談中'
+          name: '不明な顧客',
+          contact: '不明',
+          industry: '不明',
+          email: 'unknown@example.com',
+          phone: '不明',
+          status: '不明'
         };
         
         setSelectedCustomer(customerData);

@@ -1,10 +1,14 @@
-import { BrowserRouter as Router } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import YarisugiSales from './YarisugiSales';
+import CustomerDetailPage from './pages/CustomerDetailPage';
 
 function App() {
   return (
     <Router>
-      <YarisugiSales />
+      <Routes>
+        <Route path="/" element={<YarisugiSales />} />
+        <Route path="/customer/:customerId" element={<CustomerDetailPage />} />
+      </Routes>
     </Router>
   );
 }

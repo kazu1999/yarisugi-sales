@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Search, Plus, Upload, Send, Calendar, Phone, Mail, ChevronRight, 
   FileText, AlertCircle, Check, X, MessageSquare, Clock, User, 
@@ -16,6 +17,7 @@ import {
 // import CustomerDetail from './components/customer/CustomerDetail';
 
 const YarisugiDashboard = () => {
+  const navigate = useNavigate();
   const [activePage, setActivePage] = useState('top');
   const [showApproval, setShowApproval] = useState(false);
   const [customersPerPage, setCustomersPerPage] = useState(50);
@@ -42,9 +44,6 @@ const YarisugiDashboard = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showDuplicateWarning, setShowDuplicateWarning] = useState({});
   const [isGenerating, setIsGenerating] = useState(false);
-  const [showCustomerDetail, setShowCustomerDetail] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [customerDetailTab, setCustomerDetailTab] = useState('overview');
   
   // 顧客管理システムの状態
   const [activeTab, setActiveTab] = useState('概要');
@@ -599,22 +598,7 @@ const YarisugiDashboard = () => {
   }, [uploadedContent]);
 
   const showCustomerDetails = (customer) => {
-    setSelectedCustomer(customer);
-    setShowCustomerDetail(true);
-    setActiveTab('概要');
-    // 顧客情報をフォームに設定
-    setCustomerForm({
-      companyName: customer.name || '',
-      customerName: customer.contact || '',
-      location: '',
-      industry: customer.industry || '',
-      siteUrl: '',
-      snsStatus: '',
-      lineId: '',
-      email: customer.email || '',
-      salesPerson: '山田太郎',
-      status: '商談中'
-    });
+    navigate(`/customer/${customer.id}`);
   };
 
   const handleCheckout = async () => {
@@ -1192,7 +1176,7 @@ const YarisugiDashboard = () => {
           )}
 
           {/* 顧客詳細ダッシュボード */}
-          {showCustomerDetail && selectedCustomer && (
+          {/* {showCustomerDetail && selectedCustomer && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
                 <div className="p-6 border-b">
@@ -1269,7 +1253,7 @@ const YarisugiDashboard = () => {
                 </div>
               </div>
             </div>
-          )}
+          )} */}
 
           {/* FAQ追加モーダル */}
           {showAddFaq && (
@@ -1854,6 +1838,7 @@ const YarisugiDashboard = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex gap-2">
                           <Button size="sm" variant="secondary">編集</Button>
                           <Button size="sm" onClick={() => showCustomerDetails({
+                            id: 'tech-solution-001',
                             name: '株式会社テックソリューション',
                             contact: '田中一郎',
                             email: 'tanaka@tech-solution.com',
@@ -1880,6 +1865,7 @@ const YarisugiDashboard = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex gap-2">
                           <Button size="sm" variant="secondary">編集</Button>
                           <Button size="sm" onClick={() => showCustomerDetails({
+                            id: 'global-trading-002',
                             name: '株式会社グローバル商事',
                             contact: '佐藤花子',
                             email: 'sato@global-trading.co.jp',
@@ -1906,6 +1892,7 @@ const YarisugiDashboard = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex gap-2">
                           <Button size="sm" variant="secondary">編集</Button>
                           <Button size="sm" onClick={() => showCustomerDetails({
+                            id: 'manufacturing-003',
                             name: '株式会社製造工業',
                             contact: '鈴木次郎',
                             email: 'suzuki@manufacturing.com',
