@@ -4,6 +4,12 @@ Yarisugi Salesは、営業活動を効率化し、顧客情報を一元管理し
 
 ## 🎯 主要機能
 
+### 🔐 認証・セキュリティ
+- **Firebase認証**: メール/パスワード認証とGoogle認証
+- **ユーザー管理**: アカウント登録、ログイン、ログアウト
+- **認証ガード**: 未認証ユーザーの自動リダイレクト
+- **セッション管理**: 安全なユーザーセッション管理
+
 ### 📊 顧客管理システム
 - **新規顧客登録**: 会社名、担当者名、所在地、業種、サイトURL、SNS状況、LINE ID、メール、営業担当者、ステータス
 - **顧客一覧表示**: 顧客情報の一覧表示と詳細情報管理
@@ -49,6 +55,8 @@ Yarisugi Salesは、営業活動を効率化し、顧客情報を一元管理し
 - **ルーティング**: React Router DOM 7.8.0
 - **UIアイコン**: Lucide React 0.539.0
 - **スタイリング**: Tailwind CSS
+- **認証**: Firebase Authentication
+- **データベース**: Firebase Firestore
 - **開発環境**: ESLint、TypeScript対応
 
 ## 🚀 セットアップ
@@ -56,6 +64,30 @@ Yarisugi Salesは、営業活動を効率化し、顧客情報を一元管理し
 ### 前提条件
 - Node.js (v16以上)
 - npm または yarn
+- Firebaseプロジェクト
+
+### Firebase設定
+
+1. **Firebaseプロジェクト作成**
+   - [Firebase Console](https://console.firebase.google.com/)でプロジェクト作成
+   - Authenticationを有効化（メール/パスワード、Google）
+   - Firestore Databaseを有効化
+
+2. **環境変数の設定**
+   ```bash
+   # .envファイルを作成
+   cp env.example .env
+   ```
+   
+   `.env`ファイルにFirebase設定を記入：
+   ```env
+   VITE_FIREBASE_API_KEY=your-api-key
+   VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+   VITE_FIREBASE_PROJECT_ID=your-project-id
+   VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+   VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
+   VITE_FIREBASE_APP_ID=your-app-id
+   ```
 
 ### インストール
 
@@ -103,11 +135,18 @@ npm run lint
 ```
 src/
 ├── components/          # 再利用可能なコンポーネント
+│   ├── auth/           # 認証関連コンポーネント
+│   │   ├── Login.jsx   # ログインコンポーネント
+│   │   └── PrivateRoute.jsx  # 認証ガード
 │   ├── customer/       # 顧客関連コンポーネント
 │   │   ├── CustomerDetail.jsx
 │   │   └── tabs/       # 顧客詳細タブコンポーネント
 │   ├── modals/         # モーダルコンポーネント
 │   └── common/         # 共通コンポーネント
+├── contexts/           # React Context
+│   └── AuthContext.jsx # 認証状態管理
+├── firebase/           # Firebase設定
+│   └── config.js       # Firebase初期化設定
 ├── pages/              # ページコンポーネント
 │   └── CustomerDetailPage.jsx  # 顧客詳細独立ページ
 ├── hooks/              # カスタムフック
@@ -124,6 +163,8 @@ src/
 - **YarisugiSales**: メインのダッシュボードコンポーネント
 - **CustomerDetailPage**: 顧客詳細独立ページ（`/customer/:customerId`）
 - **CustomerDetail**: 顧客詳細表示コンポーネント
+- **Login**: 認証ログインコンポーネント
+- **AuthContext**: 認証状態管理コンテキスト
 - **useCustomerManagement**: 顧客管理用カスタムフック
 
 ## 🔧 開発ガイドライン
@@ -135,18 +176,26 @@ src/
 
 ### 状態管理
 - React Hooks (useState, useEffect) を使用
+- React Contextによる認証状態管理
 - カスタムフックによるロジックの分離
 - React RouterによるURL状態管理
 
 ### スタイリング
 - Tailwind CSSを使用したユーティリティファーストアプローチ
 - レスポンシブデザインの実装
+- フルスクリーン対応レイアウト
 
 ## 🌐 ルーティング
 
 ### ページ構成
-- **`/`**: メインダッシュボード（YarisugiSales）
-- **`/customer/:customerId`**: 顧客詳細ページ
+- **`/login`**: ログインページ
+- **`/`**: メインダッシュボード（YarisugiSales）- 認証必須
+- **`/customer/:customerId`**: 顧客詳細ページ - 認証必須
+
+### 認証フロー
+- **未認証ユーザー**: 自動的に`/login`にリダイレクト
+- **認証済みユーザー**: メインアプリにアクセス可能
+- **ログアウト**: 自動的に`/login`にリダイレクト
 
 ### 顧客詳細ページの特徴
 - **独立ページ表示**: モーダルではなく完全なページ遷移
@@ -155,6 +204,15 @@ src/
 - **SEO対応**: 検索エンジンでのインデックス可能
 
 ## 📝 最近の更新
+
+### v1.2.0 - Firebase認証機能の実装
+- ✅ Firebase Authentication統合
+- ✅ メール/パスワード認証
+- ✅ Google認証（OAuth）
+- ✅ ユーザー登録・ログイン機能
+- ✅ 認証ガードによるページ保護
+- ✅ セッション管理とログアウト機能
+- ✅ 環境変数による設定管理
 
 ### v1.1.0 - 独立ページ表示への変更
 - ✅ 顧客詳細をモーダルから独立ページ表示に変更
@@ -165,14 +223,25 @@ src/
 
 ## 📝 今後の開発予定
 
-- [ ] バックエンドAPIとの連携
-- [ ] データベース統合
-- [ ] ユーザー認証機能
+- [ ] Firestore Database統合
+- [ ] 顧客データの永続化
+- [ ] リアルタイムデータ同期
+- [ ] ユーザープロフィール管理
+- [ ] パスワードリセット機能
+- [ ] メール認証機能
+- [ ] ユーザー権限管理
 - [ ] リアルタイム通知機能
 - [ ] モバイルアプリ対応
 - [ ] 多言語対応
 - [ ] 検索・フィルタリング機能の強化
 - [ ] データの永続化（ローカルストレージ）
+
+## 🔐 セキュリティ
+
+- **Firebase Authentication**: 業界標準の認証システム
+- **環境変数**: 機密情報の安全な管理
+- **認証ガード**: 未認証アクセスの防止
+- **セッション管理**: 安全なユーザーセッション
 
 ## 🤝 貢献
 
