@@ -797,24 +797,24 @@ const YarisugiDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-800">
+    <div className="h-screen w-full bg-gray-50 font-sans text-gray-800 flex flex-col">
       {/* ヘッダー */}
-      <div className="bg-white shadow-md px-8 py-4 fixed top-0 left-0 right-0 z-50 flex justify-between items-center">
-        <div className="text-3xl font-extrabold bg-gradient-to-r from-indigo-500 to-purple-600 bg-clip-text text-transparent">
+      <div className="bg-white shadow-md px-4 sm:px-8 py-4 flex justify-between items-center flex-shrink-0">
+        <div className="text-2xl sm:text-3xl font-extrabold bg-gradient-to-r from-indigo-500 to-purple-600 bg-clip-text text-transparent">
           Yarisugi
         </div>
-        <div className="flex gap-4 items-center">
-          <div className="relative cursor-pointer text-xl">
+        <div className="flex gap-2 sm:gap-4 items-center">
+          <div className="relative cursor-pointer text-lg sm:text-xl">
             🔔
             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">3</span>
           </div>
-          <Button>CSVエクスポート</Button>
+          <Button size="sm">CSVエクスポート</Button>
         </div>
       </div>
 
-      <div className="flex mt-16 h-screen">
+      <div className="flex flex-1 overflow-hidden">
         {/* サイドバー */}
-        <div className="w-64 bg-slate-800 text-slate-200 py-6 overflow-y-auto">
+        <div className="w-48 sm:w-64 lg:w-72 bg-slate-800 text-slate-200 py-6 overflow-y-auto flex-shrink-0">
           <NavItem label="トップページ" page="top" active={activePage === 'top'} onClick={setActivePage} />
           <NavItem label="顧客一覧" page="customers" active={activePage === 'customers'} onClick={setActivePage} />
           <NavItem label="FAQ設定" page="faq" active={activePage === 'faq'} onClick={setActivePage} />
@@ -825,7 +825,7 @@ const YarisugiDashboard = () => {
           {/* 機能追加要望フォーム（強調） */}
           <div className="mt-2 mx-3">
             <button
-              className={`w-full text-left px-4 py-2 rounded-md font-semibold ${
+              className={`w-full text-left px-3 sm:px-4 py-2 rounded-md font-semibold text-sm ${
                 activePage === 'featureRequest'
                   ? 'bg-yellow-500 text-slate-900'
                   : 'bg-yellow-200 text-yellow-900 hover:bg-yellow-300'
@@ -838,7 +838,7 @@ const YarisugiDashboard = () => {
         </div>
 
         {/* メインコンテンツ */}
-        <div className="flex-1 p-8 overflow-y-auto">
+        <div className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
           {activePage === 'top' && (
             <div>
               {/* 新規顧客登録 */}

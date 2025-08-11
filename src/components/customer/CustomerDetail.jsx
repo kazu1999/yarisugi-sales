@@ -128,23 +128,24 @@ const CustomerDetail = ({
   };
 
   return (
-    <>
+    <div className="h-full w-full flex flex-col">
       {/* タブナビゲーション */}
-      <div className="bg-white border-b shadow-sm">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex space-x-1 p-4 overflow-x-auto">
+      <div className="bg-white border-b shadow-sm flex-shrink-0">
+        <div className="w-full">
+          <div className="flex space-x-1 p-2 sm:p-4 overflow-x-auto">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg whitespace-nowrap transition-colors ${
+                className={`flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 rounded-lg whitespace-nowrap transition-colors text-sm sm:text-base ${
                   activeTab === tab.id
                     ? 'bg-blue-500 text-white'
                     : 'text-gray-600 hover:bg-gray-100'
                 }`}
               >
                 <span>{tab.icon}</span>
-                <span>{tab.label}</span>
+                <span className="hidden sm:inline">{tab.label}</span>
+                <span className="sm:hidden">{tab.label.split(' ')[0]}</span>
               </button>
             ))}
           </div>
@@ -152,7 +153,7 @@ const CustomerDetail = ({
       </div>
 
       {/* タブコンテンツ */}
-      <div className="py-6">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         {renderTabContent()}
       </div>
 
@@ -193,7 +194,7 @@ const CustomerDetail = ({
         salesProcess={salesProcess}
         saveAsTemplate={saveAsTemplate}
       />
-    </>
+    </div>
   );
 };
 

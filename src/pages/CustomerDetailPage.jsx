@@ -146,7 +146,7 @@ const CustomerDetailPage = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="h-screen w-full bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-600">顧客情報を読み込み中...</p>
@@ -157,7 +157,7 @@ const CustomerDetailPage = () => {
 
   if (!selectedCustomer) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="h-screen w-full bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <p className="text-gray-600 mb-4">顧客が見つかりませんでした</p>
           <button
@@ -172,10 +172,10 @@ const CustomerDetailPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="h-screen w-full bg-gray-50 flex flex-col">
       {/* ヘッダー */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="bg-white shadow-sm border-b flex-shrink-0">
+        <div className="w-full px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-4">
               <button
@@ -187,7 +187,7 @@ const CustomerDetailPage = () => {
               </button>
               <div className="border-l border-gray-300 h-6"></div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">{selectedCustomer.name}</h1>
+                <h1 className="text-lg sm:text-xl font-bold text-gray-900">{selectedCustomer.name}</h1>
                 <p className="text-sm text-gray-600">{selectedCustomer.contact} • {selectedCustomer.industry}</p>
               </div>
             </div>
@@ -201,7 +201,7 @@ const CustomerDetailPage = () => {
       </div>
 
       {/* 顧客詳細コンテンツ */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex-1 overflow-hidden">
         <CustomerDetail
           showCustomerDetail={true}
           setShowCustomerDetail={() => navigate('/')}
