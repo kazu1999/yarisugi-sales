@@ -1,6 +1,7 @@
 // AWS API Gateway クライアント
 
 import { awsConfig } from './awsConfig';
+import { getAuthToken } from './cognitoAuth';
 
 class AwsApiClient {
   constructor() {
@@ -10,9 +11,13 @@ class AwsApiClient {
 
   // 認証トークンを取得
   async getAuthToken() {
-    // CognitoからIDトークンを取得
-    // 実際の実装ではCognito認証を使用
-    return localStorage.getItem('cognito_id_token') || null;
+    try {
+      const token = await getAuthToken();
+      return token;
+    } catch (error) {
+      console.error('認証トークン取得エラー:', error);
+      return null;
+    }
   }
 
   // APIリクエストを実行
@@ -40,6 +45,8 @@ class AwsApiClient {
       const response = await fetch(url, config);
       
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API Error Response:', errorText);
         throw new Error(`API Error: ${response.status} ${response.statusText}`);
       }
 
@@ -51,6 +58,11 @@ class AwsApiClient {
       console.error('API Request Error:', error);
       throw error;
     }
+  }
+
+  // ヘルスチェックAPI
+  async healthCheck() {
+    return this.request('/health');
   }
 
   // ユーザー関連API

@@ -250,7 +250,115 @@ useEffect(() => {
 2. **AWS CloudWatch**: Lambda関数のログを確認
 3. **Cognitoコンソール**: ユーザー認証状態を確認
 
+## 🔧 APIテストとSwagger Editor
+
+### APIエンドポイント
+
+#### 認証なしでアクセス可能
+- **GET /customers**: 顧客一覧取得（テスト用）
+
+#### 認証が必要
+- **POST /customers**: 顧客作成
+- **GET /customers/{id}**: 顧客詳細取得
+- **PUT /customers/{id}**: 顧客更新
+- **DELETE /customers/{id}**: 顧客削除
+
+### Swagger Editorでのテスト方法
+
+#### 1. 認証トークンの取得
+
+**方法A: ブラウザから取得**
+```bash
+# フロントエンドを起動
+npm run dev
+```
+
+1. ブラウザで `http://localhost:5173` にアクセス
+2. ユーザー登録・ログインを実行
+3. 開発者ツール（F12）を開く
+4. Consoleタブで以下を実行:
+
+```javascript
+// 認証トークンを取得
+import { getAuthToken } from './src/utils/cognitoAuth.js';
+getAuthToken().then(token => {
+    console.log('Auth Token:', token);
+    // このトークンをコピー
+});
+```
+
+**方法B: AWS CLIから取得**
+```bash
+# ユーザー認証（ユーザーが存在する場合）
+aws cognito-idp admin-initiate-auth \
+  --user-pool-id ap-northeast-1_HePREiq48 \
+  --client-id 51u2578ebgtvvao9kh5ldspcol \
+  --auth-flow ADMIN_NO_SRP_AUTH \
+  --auth-parameters USERNAME=your-email@example.com,PASSWORD=your-password
+```
+
+#### 2. Swagger Editorでの認証設定
+
+1. **Swagger Editorを開く**: https://editor.swagger.io/
+2. **API仕様を読み込み**: `api-specification.yaml`
+3. **右上の「Authorize」ボタンをクリック**
+4. **CognitoAuthセクションで**:
+   - **Value**: `Bearer YOUR_TOKEN_HERE`
+   - **Authorize**をクリック
+
+#### 3. テストリクエスト例
+
+**POST /customers（顧客作成）**
+```json
+{
+  "companyName": "テスト株式会社",
+  "customerName": "田中太郎",
+  "location": "東京都渋谷区",
+  "industry": "IT・ソフトウェア",
+  "websiteUrl": "https://example.com",
+  "email": "contact@example.com",
+  "status": "新規",
+  "notes": "Swagger Editorからのテスト"
+}
+```
+
+**GET /customers（顧客一覧取得）**
+```
+Query Parameters:
+- limit: 20
+- offset: 0
+- status: 新規（オプション）
+```
+
+### CORS設定
+
+APIは以下のドメインからのアクセスを許可しています：
+- `http://localhost:5173`（開発環境）
+- `https://editor.swagger.io`（Swagger Editor）
+- `*`（すべてのドメイン - 開発用）
+
+### エラーハンドリング
+
+#### 401 Unauthorized
+- 認証トークンが無効または期限切れ
+- 解決方法: 新しいトークンを取得
+
+#### 400 Bad Request
+- リクエストデータが不正
+- 解決方法: 必須フィールドを確認
+
+#### 500 Internal Server Error
+- サーバー側エラー
+- 解決方法: AWS CloudWatchでログを確認
+
 ## 📝 最近の更新
+
+### v2.2.0 - APIテストとSwagger Editor対応
+- ✅ 認証なしGET /customersエンドポイントの実装
+- ✅ Swagger Editor用CORS設定の追加
+- ✅ APIテスト環境の構築
+- ✅ 認証トークン取得方法のドキュメント化
+- ✅ エラーハンドリングの改善
 
 ### v2.1.0 - AWS Cognito認証の完全統合
 - ✅ AWS Cognito認証システムの完全実装

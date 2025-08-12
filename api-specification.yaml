@@ -1,0 +1,485 @@
+openapi: 3.0.3
+info:
+  title: Yarisugi Sales API
+  description: 営業支援・顧客管理システムのRESTful API
+  version: 2.1.0
+  contact:
+    name: Yarisugi Sales Team
+    email: support@yarisugi-sales.com
+  license:
+    name: Private
+    url: https://yarisugi-sales.com/license
+
+servers:
+  - url: https://xpx8akh2cj.execute-api.ap-northeast-1.amazonaws.com/dev
+    description: 開発環境
+  - url: https://api.yarisugi-sales.com/prod
+    description: 本番環境
+
+security:
+  - CognitoAuth: []
+
+paths:
+  /health:
+    get:
+      summary: ヘルスチェック
+      description: APIの動作状況を確認するエンドポイント
+      tags:
+        - System
+      responses:
+        '200':
+          description: APIが正常に動作中
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Yarisugi Sales API is running"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "12/Aug/2025:15:57:03 +0000"
+        '500':
+          description: サーバーエラー
+
+  /customers:
+    get:
+      summary: 顧客一覧取得
+      description: 認証されたユーザーの顧客一覧を取得
+      tags:
+        - Customers
+      parameters:
+        - name: limit
+          in: query
+          description: 取得件数の制限
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          description: オフセット（ページネーション用）
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: status
+          in: query
+          description: 顧客ステータスでフィルタリング
+          required: false
+          schema:
+            type: string
+            enum: [新規, 商談中, 成約, 失注]
+      responses:
+        '200':
+          description: 顧客一覧の取得成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Customer'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          description: 認証エラー
+        '403':
+          description: 権限エラー
+        '500':
+          description: サーバーエラー
+
+    post:
+      summary: 顧客作成
+      description: 新しい顧客を登録
+      tags:
+        - Customers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerCreate'
+      responses:
+        '201':
+          description: 顧客作成成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '400':
+          description: リクエストデータエラー
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: 認証エラー
+        '500':
+          description: サーバーエラー
+
+  /customers/{id}:
+    get:
+      summary: 顧客詳細取得
+      description: 指定されたIDの顧客詳細を取得
+      tags:
+        - Customers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 顧客ID
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9-]+$'
+      responses:
+        '200':
+          description: 顧客詳細の取得成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '401':
+          description: 認証エラー
+        '403':
+          description: 権限エラー
+        '404':
+          description: 顧客が見つかりません
+        '500':
+          description: サーバーエラー
+
+    put:
+      summary: 顧客更新
+      description: 指定されたIDの顧客情報を更新
+      tags:
+        - Customers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 顧客ID
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9-]+$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomerUpdate'
+      responses:
+        '200':
+          description: 顧客更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '400':
+          description: リクエストデータエラー
+        '401':
+          description: 認証エラー
+        '403':
+          description: 権限エラー
+        '404':
+          description: 顧客が見つかりません
+        '500':
+          description: サーバーエラー
+
+    delete:
+      summary: 顧客削除
+      description: 指定されたIDの顧客を削除
+      tags:
+        - Customers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 顧客ID
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9-]+$'
+      responses:
+        '204':
+          description: 顧客削除成功
+        '401':
+          description: 認証エラー
+        '403':
+          description: 権限エラー
+        '404':
+          description: 顧客が見つかりません
+        '500':
+          description: サーバーエラー
+
+components:
+  securitySchemes:
+    CognitoAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: AWS Cognito JWTトークン
+
+  schemas:
+    Customer:
+      type: object
+      required:
+        - id
+        - companyName
+        - contactName
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          description: 顧客の一意識別子
+          example: "cust_123456789"
+        companyName:
+          type: string
+          description: 会社名
+          example: "株式会社サンプル"
+        contactName:
+          type: string
+          description: 担当者名
+          example: "田中太郎"
+        location:
+          type: string
+          description: 所在地
+          example: "東京都渋谷区"
+        industry:
+          type: string
+          description: 業種
+          example: "IT・ソフトウェア"
+        websiteUrl:
+          type: string
+          format: uri
+          description: 会社WebサイトURL
+          example: "https://example.com"
+        socialMedia:
+          type: object
+          description: SNS情報
+          properties:
+            twitter:
+              type: string
+              example: "@example_twitter"
+            facebook:
+              type: string
+              example: "example.facebook"
+            linkedin:
+              type: string
+              example: "example-linkedin"
+        lineId:
+          type: string
+          description: LINE ID
+          example: "example_line_id"
+        email:
+          type: string
+          format: email
+          description: メールアドレス
+          example: "contact@example.com"
+        salesRep:
+          type: string
+          description: 営業担当者
+          example: "山田花子"
+        status:
+          type: string
+          enum: [新規, 商談中, 成約, 失注]
+          description: 顧客ステータス
+          example: "新規"
+        notes:
+          type: string
+          description: 備考
+          example: "重要な顧客です"
+        createdAt:
+          type: string
+          format: date-time
+          description: 作成日時
+          example: "2025-08-12T15:57:03Z"
+        updatedAt:
+          type: string
+          format: date-time
+          description: 更新日時
+          example: "2025-08-12T15:57:03Z"
+        userId:
+          type: string
+          description: 作成者ユーザーID
+          example: "user_123456789"
+
+    CustomerCreate:
+      type: object
+      required:
+        - companyName
+        - contactName
+        - status
+      properties:
+        companyName:
+          type: string
+          description: 会社名
+          example: "株式会社サンプル"
+        contactName:
+          type: string
+          description: 担当者名
+          example: "田中太郎"
+        location:
+          type: string
+          description: 所在地
+          example: "東京都渋谷区"
+        industry:
+          type: string
+          description: 業種
+          example: "IT・ソフトウェア"
+        websiteUrl:
+          type: string
+          format: uri
+          description: 会社WebサイトURL
+          example: "https://example.com"
+        socialMedia:
+          type: object
+          description: SNS情報
+          properties:
+            twitter:
+              type: string
+              example: "@example_twitter"
+            facebook:
+              type: string
+              example: "example.facebook"
+            linkedin:
+              type: string
+              example: "example-linkedin"
+        lineId:
+          type: string
+          description: LINE ID
+          example: "example_line_id"
+        email:
+          type: string
+          format: email
+          description: メールアドレス
+          example: "contact@example.com"
+        salesRep:
+          type: string
+          description: 営業担当者
+          example: "山田花子"
+        status:
+          type: string
+          enum: [新規, 商談中, 成約, 失注]
+          description: 顧客ステータス
+          example: "新規"
+        notes:
+          type: string
+          description: 備考
+          example: "重要な顧客です"
+
+    CustomerUpdate:
+      type: object
+      properties:
+        companyName:
+          type: string
+          description: 会社名
+          example: "株式会社サンプル"
+        contactName:
+          type: string
+          description: 担当者名
+          example: "田中太郎"
+        location:
+          type: string
+          description: 所在地
+          example: "東京都渋谷区"
+        industry:
+          type: string
+          description: 業種
+          example: "IT・ソフトウェア"
+        websiteUrl:
+          type: string
+          format: uri
+          description: 会社WebサイトURL
+          example: "https://example.com"
+        socialMedia:
+          type: object
+          description: SNS情報
+          properties:
+            twitter:
+              type: string
+              example: "@example_twitter"
+            facebook:
+              type: string
+              example: "example.facebook"
+            linkedin:
+              type: string
+              example: "example-linkedin"
+        lineId:
+          type: string
+          description: LINE ID
+          example: "example_line_id"
+        email:
+          type: string
+          format: email
+          description: メールアドレス
+          example: "contact@example.com"
+        salesRep:
+          type: string
+          description: 営業担当者
+          example: "山田花子"
+        status:
+          type: string
+          enum: [新規, 商談中, 成約, 失注]
+          description: 顧客ステータス
+          example: "商談中"
+        notes:
+          type: string
+          description: 備考
+          example: "重要な顧客です"
+
+    Pagination:
+      type: object
+      properties:
+        limit:
+          type: integer
+          description: 取得件数
+          example: 20
+        offset:
+          type: integer
+          description: オフセット
+          example: 0
+        total:
+          type: integer
+          description: 総件数
+          example: 150
+        hasNext:
+          type: boolean
+          description: 次のページがあるか
+          example: true
+        hasPrev:
+          type: boolean
+          description: 前のページがあるか
+          example: false
+
+    Error:
+      type: object
+      required:
+        - message
+        - code
+      properties:
+        message:
+          type: string
+          description: エラーメッセージ
+          example: "Invalid request data"
+        code:
+          type: string
+          description: エラーコード
+          example: "VALIDATION_ERROR"
+        details:
+          type: object
+          description: エラーの詳細情報
+          additionalProperties: true
+
+tags:
+  - name: System
+    description: システム関連のエンドポイント
+  - name: Customers
+    description: 顧客管理関連のエンドポイント 
