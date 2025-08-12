@@ -229,6 +229,16 @@ resource "aws_cognito_user_pool_client" "main" {
 
   callback_urls = ["http://localhost:5173", "https://your-domain.com"]
   logout_urls   = ["http://localhost:5173", "https://your-domain.com"]
+
+  token_validity_units {
+    access_token  = "hours"
+    id_token      = "hours"
+    refresh_token = "days"
+  }
+
+  access_token_validity  = 1
+  id_token_validity      = 1
+  refresh_token_validity = 30
 }
 
 # Lambda関数用のIAMロール
@@ -356,6 +366,246 @@ resource "aws_api_gateway_integration_response" "health" {
   }
 }
 
+# 顧客管理APIリソース
+resource "aws_api_gateway_resource" "customers" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "customers"
+}
+
+# 顧客一覧取得 (GET /customers) - 認証なし（開発・テスト用）
+resource "aws_api_gateway_method" "customers_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.customers.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+# 顧客作成 (POST /customers)
+resource "aws_api_gateway_method" "customers_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.customers.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# CORS用のOPTIONSメソッド (customers)
+resource "aws_api_gateway_method" "customers_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.customers.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# 顧客詳細リソース
+resource "aws_api_gateway_resource" "customer" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.customers.id
+  path_part   = "{id}"
+}
+
+# 顧客詳細取得 (GET /customers/{id})
+resource "aws_api_gateway_method" "customer_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.customer.id
+  http_method   = "GET"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# 顧客更新 (PUT /customers/{id})
+resource "aws_api_gateway_method" "customer_put" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.customer.id
+  http_method   = "PUT"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# CORS用のOPTIONSメソッド (customer)
+resource "aws_api_gateway_method" "customer_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.customer.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# 顧客削除 (DELETE /customers/{id})
+resource "aws_api_gateway_method" "customer_delete" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.customer.id
+  http_method   = "DELETE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# Lambda関数との統合
+resource "aws_api_gateway_integration" "customers_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.customers.id
+  http_method = aws_api_gateway_method.customers_get.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:yarisugi-customers-api/invocations"
+}
+
+resource "aws_api_gateway_integration" "customers_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.customers.id
+  http_method = aws_api_gateway_method.customers_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:yarisugi-customers-api/invocations"
+}
+
+resource "aws_api_gateway_integration" "customer_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.customer.id
+  http_method = aws_api_gateway_method.customer_get.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:yarisugi-customers-api/invocations"
+}
+
+resource "aws_api_gateway_integration" "customer_put" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.customer.id
+  http_method = aws_api_gateway_method.customer_put.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:yarisugi-customers-api/invocations"
+}
+
+resource "aws_api_gateway_integration" "customer_delete" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.customer.id
+  http_method = aws_api_gateway_method.customer_delete.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:yarisugi-customers-api/invocations"
+}
+
+# CORS用の統合 (customers)
+resource "aws_api_gateway_integration" "customers_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.customers.id
+  http_method = aws_api_gateway_method.customers_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# CORS用の統合 (customer)
+resource "aws_api_gateway_integration" "customer_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.customer.id
+  http_method = aws_api_gateway_method.customer_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# CORS用のメソッドレスポンス (customers)
+resource "aws_api_gateway_method_response" "customers_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.customers.id
+  http_method = aws_api_gateway_method.customers_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# CORS用のメソッドレスポンス (customer)
+resource "aws_api_gateway_method_response" "customer_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.customer.id
+  http_method = aws_api_gateway_method.customer_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# CORS用の統合レスポンス (customers)
+resource "aws_api_gateway_integration_response" "customers_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.customers.id
+  http_method = aws_api_gateway_method.customers_options.http_method
+  status_code = aws_api_gateway_method_response.customers_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Origin'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# CORS用の統合レスポンス (customer)
+resource "aws_api_gateway_integration_response" "customer_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.customer.id
+  http_method = aws_api_gateway_method.customer_options.http_method
+  status_code = aws_api_gateway_method_response.customer_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Origin'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# Lambda関数の権限設定
+resource "aws_lambda_permission" "api_gateway" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = "yarisugi-customers-api"
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
+# Lambda関数の環境変数設定
+resource "aws_lambda_function" "customers_api" {
+  filename         = "../lambda_functions/customers_lambda/customers_lambda.zip"
+  function_name    = "yarisugi-customers-api"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "customers.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 30
+  memory_size     = 128
+
+  environment {
+    variables = {
+      CUSTOMERS_TABLE = aws_dynamodb_table.customers.name
+      USERS_TABLE     = aws_dynamodb_table.users.name
+      FAQS_TABLE      = aws_dynamodb_table.faqs.name
+      KNOWLEDGE_TABLE = aws_dynamodb_table.knowledge.name
+      SALES_PROCESSES_TABLE = aws_dynamodb_table.sales_processes.name
+    }
+  }
+}
+
+# 現在のAWSアカウントIDを取得
+data "aws_caller_identity" "current" {}
+
 # API Gateway Deployment
 resource "aws_api_gateway_deployment" "main" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -365,7 +615,25 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_method.health,
     aws_api_gateway_integration.health,
     aws_api_gateway_method_response.health,
-    aws_api_gateway_integration_response.health
+    aws_api_gateway_integration_response.health,
+    aws_api_gateway_method.customers_get,
+    aws_api_gateway_integration.customers_get,
+    aws_api_gateway_method.customers_post,
+    aws_api_gateway_integration.customers_post,
+    aws_api_gateway_method.customers_options,
+    aws_api_gateway_integration.customers_options,
+    aws_api_gateway_method.customer_get,
+    aws_api_gateway_integration.customer_get,
+    aws_api_gateway_method.customer_put,
+    aws_api_gateway_integration.customer_put,
+    aws_api_gateway_method.customer_delete,
+    aws_api_gateway_integration.customer_delete,
+    aws_api_gateway_method.customer_options,
+    aws_api_gateway_integration.customer_options,
+    aws_api_gateway_method_response.customers_options,
+    aws_api_gateway_integration_response.customers_options,
+    aws_api_gateway_method_response.customer_options,
+    aws_api_gateway_integration_response.customer_options
   ]
 
   lifecycle {
