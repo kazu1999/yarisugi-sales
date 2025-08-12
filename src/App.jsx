@@ -7,8 +7,8 @@ import CustomerDetailPage from './pages/CustomerDetailPage';
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
+    <Router>
+      <AuthProvider>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/" element={
@@ -22,8 +22,8 @@ function App() {
             </PrivateRoute>
           } />
         </Routes>
-      </Router>
-    </AuthProvider>
+      </AuthProvider>
+    </Router>
   );
 }
 
