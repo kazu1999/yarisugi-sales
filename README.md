@@ -5,10 +5,11 @@ Yarisugi Salesは、営業活動を効率化し、顧客情報を一元管理し
 ## 🎯 主要機能
 
 ### 🔐 認証・セキュリティ
-- **Firebase認証**: メール/パスワード認証とGoogle認証
+- **AWS Cognito認証**: セキュアなユーザー認証・管理
 - **ユーザー管理**: アカウント登録、ログイン、ログアウト
 - **認証ガード**: 未認証ユーザーの自動リダイレクト
 - **セッション管理**: 安全なユーザーセッション管理
+- **プライバシー重視**: オフライン対応とクラウド同期
 
 ### 📊 顧客管理システム
 - **新規顧客登録**: 会社名、担当者名、所在地、業種、サイトURL、SNS状況、LINE ID、メール、営業担当者、ステータス
@@ -50,198 +51,155 @@ Yarisugi Salesは、営業活動を効率化し、顧客情報を一元管理し
 
 ## 🛠 技術スタック
 
-- **フロントエンド**: React 19.1.1
+### フロントエンド
+- **React**: 19.1.1
 - **ビルドツール**: Vite 7.1.0
 - **ルーティング**: React Router DOM 7.8.0
 - **UIアイコン**: Lucide React 0.539.0
 - **スタイリング**: Tailwind CSS
-- **認証**: Firebase Authentication
-- **データベース**: Firebase Firestore
-- **開発環境**: ESLint、TypeScript対応
+- **状態管理**: IndexedDB（オフライン対応）
+
+### バックエンド（AWS）
+- **認証**: AWS Cognito
+- **データベース**: Amazon DynamoDB
+- **API**: Amazon API Gateway
+- **サーバーレス**: AWS Lambda（Python）
+- **インフラ**: Terraform
 
 ## 🚀 セットアップ
 
 ### 前提条件
 - Node.js (v16以上)
 - npm または yarn
-- Firebaseプロジェクト
+- AWS CLI
+- Terraform
 
-### Firebase設定
+### 1. フロントエンドセットアップ
 
-1. **Firebaseプロジェクト作成**
-   - [Firebase Console](https://console.firebase.google.com/)でプロジェクト作成
-   - Authenticationを有効化（メール/パスワード、Google）
-   - Firestore Databaseを有効化
-
-2. **環境変数の設定**
-   ```bash
-   # .envファイルを作成
-   cp env.example .env
-   ```
-   
-   `.env`ファイルにFirebase設定を記入：
-   ```env
-   VITE_FIREBASE_API_KEY=your-api-key
-   VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-   VITE_FIREBASE_PROJECT_ID=your-project-id
-   VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
-   VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
-   VITE_FIREBASE_APP_ID=your-app-id
-   ```
-
-### インストール
-
-1. リポジトリをクローン
 ```bash
+# リポジトリをクローン
 git clone [repository-url]
 cd yarisugi-sales
-```
 
-2. 依存関係をインストール
-```bash
+# 依存関係をインストール
 npm install
-```
 
-3. 開発サーバーを起動
-```bash
+# 開発サーバーを起動
 npm run dev
 ```
 
-4. ブラウザで `http://localhost:5173` にアクセス
+### 2. AWSリソースデプロイ
 
-### ビルド
-
-本番用ビルドを作成:
 ```bash
-npm run build
+# バックエンドディレクトリに移動
+cd backend
+
+# デプロイスクリプトを実行
+chmod +x deploy.sh
+./deploy.sh
 ```
 
-### プレビュー
+### 3. 環境変数設定
 
-ビルド結果をプレビュー:
-```bash
-npm run preview
-```
+デプロイ完了後、出力された値を`.env`ファイルに設定：
 
-### リント
-
-コードの品質チェック:
-```bash
-npm run lint
+```env
+# AWS設定
+VITE_COGNITO_USER_POOL_ID=ap-northeast-1_xxxxxxxxx
+VITE_COGNITO_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx
+VITE_AWS_REGION=ap-northeast-1
+VITE_API_GATEWAY_ENDPOINT=https://xxxxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/dev
 ```
 
 ## 📁 プロジェクト構造
 
 ```
-src/
-├── components/          # 再利用可能なコンポーネント
-│   ├── auth/           # 認証関連コンポーネント
-│   │   ├── Login.jsx   # ログインコンポーネント
-│   │   └── PrivateRoute.jsx  # 認証ガード
-│   ├── customer/       # 顧客関連コンポーネント
-│   │   ├── CustomerDetail.jsx
-│   │   └── tabs/       # 顧客詳細タブコンポーネント
-│   ├── modals/         # モーダルコンポーネント
-│   └── common/         # 共通コンポーネント
-├── contexts/           # React Context
-│   └── AuthContext.jsx # 認証状態管理
-├── firebase/           # Firebase設定
-│   └── config.js       # Firebase初期化設定
-├── pages/              # ページコンポーネント
-│   └── CustomerDetailPage.jsx  # 顧客詳細独立ページ
-├── hooks/              # カスタムフック
-│   └── useCustomerManagement.js
-├── utils/              # ユーティリティ関数
-├── assets/             # 静的アセット
-├── App.jsx             # メインアプリケーション（ルーティング設定）
-├── YarisugiSales.jsx   # メインコンポーネント
-└── main.jsx            # エントリーポイント
+yarisugi-sales/
+├── src/                    # フロントエンド（React）
+│   ├── components/         # Reactコンポーネント
+│   ├── contexts/          # React Context
+│   ├── utils/             # ユーティリティ
+│   │   ├── awsConfig.js   # AWS設定
+│   │   ├── awsApiClient.js # APIクライアント
+│   │   └── indexedDB.js   # IndexedDB操作
+│   └── ...
+├── backend/               # バックエンド（AWS）
+│   ├── lambda_functions/  # Python Lambda関数
+│   │   ├── common/        # 共通ライブラリ
+│   │   ├── customers.py   # 顧客管理API
+│   │   └── ...
+│   ├── terraform/         # インフラ設定
+│   │   ├── main.tf        # メイン設定
+│   │   └── variables.tf   # 変数定義
+│   └── deploy.sh          # デプロイスクリプト
+└── ...
 ```
-
-## 🎨 主要コンポーネント
-
-- **YarisugiSales**: メインのダッシュボードコンポーネント
-- **CustomerDetailPage**: 顧客詳細独立ページ（`/customer/:customerId`）
-- **CustomerDetail**: 顧客詳細表示コンポーネント
-- **Login**: 認証ログインコンポーネント
-- **AuthContext**: 認証状態管理コンテキスト
-- **useCustomerManagement**: 顧客管理用カスタムフック
 
 ## 🔧 開発ガイドライン
 
-### コードスタイル
-- ESLintを使用したコード品質管理
-- React Hooksの推奨パターンに従う
-- コンポーネントの再利用性を重視
+### フロントエンド開発
+- **オフライン対応**: IndexedDBでローカルデータ管理
+- **クラウド同期**: AWS API Gateway経由でDynamoDBと同期
+- **認証**: AWS Cognitoを使用したセキュアな認証
 
-### 状態管理
-- React Hooks (useState, useEffect) を使用
-- React Contextによる認証状態管理
-- カスタムフックによるロジックの分離
-- React RouterによるURL状態管理
+### バックエンド開発
+- **Python Lambda**: サーバーレス関数
+- **DynamoDB**: NoSQLデータベース
+- **API Gateway**: RESTful API
 
-### スタイリング
-- Tailwind CSSを使用したユーティリティファーストアプローチ
-- レスポンシブデザインの実装
-- フルスクリーン対応レイアウト
+### インフラ管理
+- **Terraform**: Infrastructure as Code
+- **AWS**: クラウドインフラ
 
-## 🌐 ルーティング
+## 🌐 API仕様
 
-### ページ構成
-- **`/login`**: ログインページ
-- **`/`**: メインダッシュボード（YarisugiSales）- 認証必須
-- **`/customer/:customerId`**: 顧客詳細ページ - 認証必須
+### 認証
+- **Cognito User Pool**: ユーザー認証
+- **JWT Token**: API認証
 
-### 認証フロー
-- **未認証ユーザー**: 自動的に`/login`にリダイレクト
-- **認証済みユーザー**: メインアプリにアクセス可能
-- **ログアウト**: 自動的に`/login`にリダイレクト
-
-### 顧客詳細ページの特徴
-- **独立ページ表示**: モーダルではなく完全なページ遷移
-- **URL管理**: 顧客IDがURLに反映され、ブックマーク可能
-- **ブラウザ戻る対応**: ブラウザの戻るボタンで一覧に戻れる
-- **SEO対応**: 検索エンジンでのインデックス可能
+### エンドポイント
+- `GET /customers` - 顧客一覧取得
+- `POST /customers` - 顧客作成
+- `PUT /customers/{id}` - 顧客更新
+- `DELETE /customers/{id}` - 顧客削除
+- `GET /faqs` - FAQ一覧取得
+- `POST /faqs` - FAQ作成
+- `GET /knowledge` - ナレッジ一覧取得
+- `POST /knowledge` - ナレッジ作成
 
 ## 📝 最近の更新
 
-### v1.2.0 - Firebase認証機能の実装
-- ✅ Firebase Authentication統合
-- ✅ メール/パスワード認証
-- ✅ Google認証（OAuth）
-- ✅ ユーザー登録・ログイン機能
-- ✅ 認証ガードによるページ保護
-- ✅ セッション管理とログアウト機能
-- ✅ 環境変数による設定管理
+### v2.0.0 - AWS構成への移行
+- ✅ AWS Cognito認証システムの実装
+- ✅ DynamoDBデータベースの構築
+- ✅ Python Lambda関数の実装
+- ✅ API Gatewayの設定
+- ✅ Terraformによるインフラ管理
+- ✅ オフライン対応（IndexedDB）
+- ✅ クラウド同期機能
 
-### v1.1.0 - 独立ページ表示への変更
-- ✅ 顧客詳細をモーダルから独立ページ表示に変更
-- ✅ React Router DOMによるルーティング実装
-- ✅ 顧客IDに基づくデータ取得機能
-- ✅ ブラウザ戻るボタンの正常動作
-- ✅ ブックマーク機能の対応
-
-## 📝 今後の開発予定
-
-- [ ] Firestore Database統合
-- [ ] 顧客データの永続化
-- [ ] リアルタイムデータ同期
-- [ ] ユーザープロフィール管理
-- [ ] パスワードリセット機能
-- [ ] メール認証機能
-- [ ] ユーザー権限管理
-- [ ] リアルタイム通知機能
-- [ ] モバイルアプリ対応
-- [ ] 多言語対応
-- [ ] 検索・フィルタリング機能の強化
-- [ ] データの永続化（ローカルストレージ）
+### v1.3.0 - ローカル認証システムへの移行
+- ✅ Firebase依存関係の完全削除
+- ✅ ローカルストレージベース認証システムの実装
+- ✅ プライバシー重視の設計（データはブラウザに保存）
+- ✅ 設定不要の簡単セットアップ
+- ✅ オフライン対応
 
 ## 🔐 セキュリティ
 
-- **Firebase Authentication**: 業界標準の認証システム
-- **環境変数**: 機密情報の安全な管理
-- **認証ガード**: 未認証アクセスの防止
-- **セッション管理**: 安全なユーザーセッション
+- **AWS Cognito**: 業界標準の認証システム
+- **IAM認証**: 細かい権限管理
+- **DynamoDB**: 暗号化されたデータ保存
+- **API Gateway**: セキュアなAPI通信
+- **オフライン対応**: ローカルデータの安全な管理
+
+## 💰 コスト
+
+### AWS料金（月額目安）
+- **DynamoDB**: 従量課金（使用量に応じて）
+- **Lambda**: 従量課金（100万リクエストまで無料）
+- **API Gateway**: 従量課金（100万リクエストまで無料）
+- **Cognito**: 従量課金（5万ユーザーまで無料）
 
 ## 🤝 貢献
 

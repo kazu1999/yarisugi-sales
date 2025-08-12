@@ -10,7 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "firebase": "^12.1.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.865.0",
+    "@aws-sdk/client-dynamodb": "^3.864.0",
+    "@aws-sdk/lib-dynamodb": "^3.864.0",
+    "aws-amplify": "^6.15.5",
+    "aws-sdk": "^2.1692.0",
     "lucide-react": "^0.539.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
