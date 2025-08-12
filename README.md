@@ -121,6 +121,7 @@ yarisugi-sales/
 │   ├── utils/             # ユーティリティ
 │   │   ├── awsConfig.js   # AWS設定
 │   │   ├── awsApiClient.js # APIクライアント
+│   │   ├── cognitoAuth.js # Cognito認証
 │   │   └── indexedDB.js   # IndexedDB操作
 │   └── ...
 ├── backend/               # バックエンド（AWS）
@@ -167,7 +168,96 @@ yarisugi-sales/
 - `GET /knowledge` - ナレッジ一覧取得
 - `POST /knowledge` - ナレッジ作成
 
+## 🔐 AWS Cognito認証の統合
+
+### 認証フロー
+1. **ユーザー登録**: メールアドレスとパスワードでアカウント作成
+2. **確認コード**: メールで送信された確認コードを入力
+3. **ログイン**: 確認済みアカウントでログイン
+4. **セッション管理**: JWTトークンによるセッション管理
+
+### 設定ファイル
+- `src/utils/awsConfig.js`: AWS Amplify設定
+- `src/utils/cognitoAuth.js`: Cognito認証ロジック
+- `src/contexts/AuthContext.jsx`: 認証状態管理
+
+### 重要な設定
+```javascript
+// App.jsxでのRouterとAuthProviderの順序
+<Router>
+  <AuthProvider>
+    <Routes>
+      {/* ルート定義 */}
+    </Routes>
+  </AuthProvider>
+</Router>
+```
+
+## 🚨 トラブルシューティング
+
+### よくある問題と解決方法
+
+#### 1. AWS Amplifyのインポートエラー
+**エラー**: `The requested module does not provide an export named 'Auth'`
+
+**解決方法**: AWS Amplify v6ではインポート方法が変更されています
+```javascript
+// 旧
+import { Auth } from 'aws-amplify';
+
+// 新
+import { signUp, signIn, signOut } from 'aws-amplify/auth';
+```
+
+#### 2. Cognito認証フローエラー
+**エラー**: `USER_SRP_AUTH is not enabled for the client`
+
+**解決方法**: AWS Cognitoコンソールで認証フローを有効にする
+- AWS Cognito → User Pools → App client → Authentication flows
+- `USER_SRP_AUTH`を有効にする
+
+#### 3. useNavigateエラー
+**エラー**: `useNavigate() may be used only in the context of a <Router> component`
+
+**解決方法**: RouterとAuthProviderの順序を修正
+```javascript
+// 正しい順序
+<Router>
+  <AuthProvider>
+    {/* コンポーネント */}
+  </AuthProvider>
+</Router>
+```
+
+#### 4. 画面遷移しない問題
+**問題**: ログイン成功後、メインページに遷移しない
+
+**解決方法**: 認証状態監視とナビゲーション処理を追加
+```javascript
+// AuthContext.jsx
+useEffect(() => {
+  const unsubscribe = onAuthStateChanged((user) => {
+    if (user && window.location.pathname === '/login') {
+      navigate('/');
+    }
+  });
+  return unsubscribe;
+}, [navigate]);
+```
+
+### デバッグ方法
+1. **ブラウザの開発者ツール**: F12でコンソールを確認
+2. **AWS CloudWatch**: Lambda関数のログを確認
+3. **Cognitoコンソール**: ユーザー認証状態を確認
+
 ## 📝 最近の更新
+
+### v2.1.0 - AWS Cognito認証の完全統合
+- ✅ AWS Cognito認証システムの完全実装
+- ✅ ユーザー登録・確認・ログイン機能
+- ✅ 認証状態監視と自動ナビゲーション
+- ✅ エラーハンドリングとトラブルシューティング
+- ✅ セキュアなセッション管理
 
 ### v2.0.0 - AWS構成への移行
 - ✅ AWS Cognito認証システムの実装
