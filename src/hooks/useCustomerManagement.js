@@ -7,6 +7,7 @@ import {
   defaultProcessTemplates, 
   defaultQuestionnaireItems 
 } from '../utils/constants';
+import { awsApiClient } from '../utils/awsApiClient';
 
 export const useCustomerManagement = () => {
   // 顧客管理システムの状態
@@ -16,6 +17,11 @@ export const useCustomerManagement = () => {
   const [showEmailComposer, setShowEmailComposer] = useState(false);
   const [showLineComposer, setShowLineComposer] = useState(false);
   const [selectedProcess, setSelectedProcess] = useState(null);
+  
+  // 顧客データの状態
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   
   // 顧客登録フォーム
   const [customerForm, setCustomerForm] = useState({
@@ -28,7 +34,7 @@ export const useCustomerManagement = () => {
     lineId: '',
     email: '',
     salesPerson: '',
-    status: ''
+    status: '新規'
   });
 
   // AI自動化設定
@@ -66,275 +72,244 @@ export const useCustomerManagement = () => {
   const [lineHistory, setLineHistory] = useState([
     {
       id: 1,
-      sender: 'customer',
-      message: 'お見積もりの件、確認させていただきました。',
-      timestamp: '2025-07-20 14:30',
-      read: true
+      type: '受信',
+      from: '田中太郎',
+      content: 'お疲れ様です。先日の提案書について質問があります。',
+      date: '2025-07-28 15:30',
+      attachments: []
     },
     {
       id: 2,
-      sender: 'sales',
-      message: 'ご確認ありがとうございます。ご不明な点はございますか？',
-      timestamp: '2025-07-20 14:35',
-      read: true
-    },
-    {
-      id: 3,
-      sender: 'customer',
-      message: '導入時期について相談したいです。',
-      timestamp: '2025-07-20 14:40',
-      read: true
+      type: '送信',
+      to: '田中太郎',
+      content: 'お疲れ様です。どのようなご質問でしょうか？',
+      date: '2025-07-28 15:35',
+      attachments: []
     }
   ]);
 
-  // 承認待ちアイテム
+  // 承認待ち項目
   const [approvalItems, setApprovalItems] = useState([
     {
       id: 1,
-      type: 'メール返信',
-      from: 'tanaka@techsolution.co.jp',
-      subject: 'Re: お打ち合わせの件について',
-      message: 'ありがとうございます。来週火曜日14:00で調整お願いします。',
-      timestamp: '2025-07-28 10:30',
-      confidence: 85,
-      aiSuggestion: 'かしこまりました。来週火曜日14:00でお打ち合わせを設定いたします。場所はオンライン会議でよろしいでしょうか？'
+      type: '見積書',
+      customer: '田中太郎',
+      amount: 500000,
+      status: '承認待ち',
+      date: '2025-07-28'
     },
     {
       id: 2,
-      type: 'FAQ応答',
-      from: 'tanaka@techsolution.co.jp',
-      subject: '料金プランについて',
-      message: '基本プランと企業プランの違いを教えてください',
-      timestamp: '2025-07-28 09:15',
-      confidence: 95,
-      aiSuggestion: '基本プランは月額50,000円で10ユーザーまで、企業プランは月額200,000円で無制限ユーザー＋カスタマイズ機能が含まれます。'
+      type: '契約書',
+      customer: '佐藤花子',
+      amount: 800000,
+      status: '承認待ち',
+      date: '2025-07-27'
     }
   ]);
 
   // 営業プロセス
   const [salesProcess, setSalesProcess] = useState([
-    { 
-      id: 1, 
-      name: 'リード獲得', 
-      type: 'lead',
-      completed: true, 
-      date: '2025-06-15', 
-      targetDate: '2025-06-20',
-      reminder: true,
-      replyDueDate: '',
-      replyStatus: 'received',
-      emailHistory: [
-        { date: '2025-06-15', type: 'メール' },
-        { date: '2025-06-16', type: 'LINE' }
-      ]
+    {
+      id: 1,
+      name: '初回接触',
+      status: '完了',
+      date: '2025-07-25',
+      notes: '電話で初回接触を実施'
     },
-    { 
-      id: 2, 
-      name: '初回商談', 
-      type: 'meeting',
-      completed: true, 
-      date: '2025-06-28', 
-      targetDate: '2025-07-01',
-      reminder: true,
-      replyDueDate: '',
-      replyStatus: 'received',
-      emailHistory: [
-        { date: '2025-06-28', type: 'メール' }
-      ]
+    {
+      id: 2,
+      name: '提案書作成',
+      status: '進行中',
+      date: '2025-07-28',
+      notes: '要件定義に基づいて提案書を作成中'
     },
-    { 
-      id: 3, 
-      name: '商談前アンケート', 
-      type: 'questionnaire',
-      completed: false, 
-      targetDate: '2025-07-25',
-      reminder: true,
-      replyDueDate: '2025-07-24',
-      replyStatus: 'waiting',
-      emailHistory: []
-    },
-    { 
-      id: 4, 
-      name: '提案書作成', 
-      type: 'proposal',
-      completed: false, 
-      targetDate: '2025-08-05',
-      reminder: false,
-      replyDueDate: '2025-08-03',
-      replyStatus: 'waiting',
-      emailHistory: []
-    },
-    { 
-      id: 5, 
-      name: '見積もり提出', 
-      type: 'quote',
-      completed: false, 
-      targetDate: '2025-08-15',
-      reminder: false,
-      replyDueDate: '',
-      replyStatus: '',
-      emailHistory: []
-    },
-    { 
-      id: 6, 
-      name: '契約締結', 
-      type: 'contract',
-      completed: false, 
-      targetDate: '2025-08-30',
-      reminder: false,
-      replyDueDate: '',
-      replyStatus: '',
-      emailHistory: []
+    {
+      id: 3,
+      name: '最終提案',
+      status: '未開始',
+      date: null,
+      notes: ''
     }
   ]);
 
   // プロセステンプレート
   const [processTemplates, setProcessTemplates] = useState(defaultProcessTemplates);
 
+  // テンプレート保存モーダル
   const [showTemplateSaveModal, setShowTemplateSaveModal] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
 
   // アンケート項目
   const [questionnaireItems, setQuestionnaireItems] = useState(defaultQuestionnaireItems);
 
-  // 進捗率計算
-  const calculateProgress = () => {
-    const completed = salesProcess.filter(p => p.completed).length;
-    return Math.round((completed / salesProcess.length) * 100);
+  // 顧客データの取得
+  const fetchCustomers = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      console.log('🔍 顧客データ取得開始');
+      
+      const response = await awsApiClient.getCustomers();
+      console.log('📦 APIレスポンス:', response);
+      console.log('📋 顧客データ:', response.customers);
+      
+      setCustomers(response.customers || []);
+      console.log('✅ 顧客データ設定完了:', response.customers || []);
+      console.log('📊 顧客データ詳細:', JSON.stringify(response.customers, null, 2));
+    } catch (err) {
+      console.error('❌ 顧客データ取得エラー:', err);
+      setError('顧客データの取得に失敗しました');
+      setCustomers([]);
+    } finally {
+      setLoading(false);
+      console.log('🏁 顧客データ取得完了');
+    }
+  };
+
+  // 顧客作成
+  const createCustomer = async (customerData) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await awsApiClient.createCustomer(customerData);
+      await fetchCustomers(); // 一覧を再取得
+      return response;
+    } catch (err) {
+      console.error('顧客作成エラー:', err);
+      setError('顧客の作成に失敗しました');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 顧客更新
+  const updateCustomer = async (customerId, customerData) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await awsApiClient.updateCustomer(customerId, customerData);
+      await fetchCustomers(); // 一覧を再取得
+      return response;
+    } catch (err) {
+      console.error('顧客更新エラー:', err);
+      setError('顧客の更新に失敗しました');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 顧客削除
+  const deleteCustomer = async (customerId) => {
+    try {
+      setLoading(true);
+      setError(null);
+      await awsApiClient.deleteCustomer(customerId);
+      await fetchCustomers(); // 一覧を再取得
+    } catch (err) {
+      console.error('顧客削除エラー:', err);
+      setError('顧客の削除に失敗しました');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 顧客詳細取得
+  const fetchCustomer = async (customerId) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await awsApiClient.getCustomer(customerId);
+      return response;
+    } catch (err) {
+      console.error('顧客詳細取得エラー:', err);
+      setError('顧客詳細の取得に失敗しました');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 初期データ読み込み
+  useEffect(() => {
+    fetchCustomers();
+  }, []);
+
+  // 進捗計算
+  const calculateProgress = (process) => {
+    const completed = process.filter(step => step.status === '完了').length;
+    return Math.round((completed / process.length) * 100);
   };
 
   // プロセスステップ更新
-  const updateProcessStep = (id, field, value) => {
+  const updateProcessStep = (stepId, updates) => {
     setSalesProcess(prev => prev.map(step => 
-      step.id === id ? { ...step, [field]: value } : step
+      step.id === stepId ? { ...step, ...updates } : step
     ));
   };
 
   // プロセスステップ追加
-  const addProcessStep = () => {
-    const newStep = {
-      id: Date.now(),
-      name: '',
-      type: 'meeting',
-      completed: false,
-      targetDate: '',
-      reminder: false
-    };
-    setSalesProcess(prev => [...prev, newStep]);
+  const addProcessStep = (step) => {
+    setSalesProcess(prev => [...prev, { ...step, id: Date.now() }]);
   };
 
   // プロセスステップ削除
-  const removeProcessStep = (id) => {
-    setSalesProcess(prev => prev.filter(step => step.id !== id));
+  const removeProcessStep = (stepId) => {
+    setSalesProcess(prev => prev.filter(step => step.id !== stepId));
   };
 
   // アンケート項目更新
-  const updateQuestionnaireItem = (id, field, value) => {
+  const updateQuestionnaireItem = (itemId, updates) => {
     setQuestionnaireItems(prev => prev.map(item => 
-      item.id === id ? { ...item, [field]: value } : item
+      item.id === itemId ? { ...item, ...updates } : item
     ));
   };
 
   // アンケート項目追加
-  const addQuestionnaireItem = () => {
-    const newItem = {
-      id: Date.now(),
-      question: '',
-      type: 'text',
-      required: false,
-      options: []
-    };
-    setQuestionnaireItems(prev => [...prev, newItem]);
+  const addQuestionnaireItem = (item) => {
+    setQuestionnaireItems(prev => [...prev, { ...item, id: Date.now() }]);
   };
 
   // アンケート項目削除
-  const removeQuestionnaireItem = (id) => {
-    setQuestionnaireItems(prev => prev.filter(item => item.id !== id));
+  const removeQuestionnaireItem = (itemId) => {
+    setQuestionnaireItems(prev => prev.filter(item => item.id !== itemId));
   };
 
-  // テンプレート保存
-  const saveAsTemplate = () => {
-    if (!newTemplateName.trim()) {
-      alert('テンプレート名を入力してください');
-      return;
-    }
-    
+  // テンプレートとして保存
+  const saveAsTemplate = (name) => {
     const newTemplate = {
       id: Date.now(),
-      name: newTemplateName,
-      steps: salesProcess.map(p => p.name).filter(name => name),
-      isDefault: false
+      name,
+      process: [...salesProcess],
+      questionnaire: [...questionnaireItems]
     };
-    
     setProcessTemplates(prev => [...prev, newTemplate]);
-    setNewTemplateName('');
     setShowTemplateSaveModal(false);
+    setNewTemplateName('');
   };
 
-  // 返信期限更新
-  const updateReplyDueDate = (id, date) => {
-    setSalesProcess(prev => prev.map(p =>
-      p.id === id ? { ...p, replyDueDate: date, replyStatus: date ? 'waiting' : '' } : p
+  // 返答期限更新
+  const updateReplyDueDate = (itemId, dueDate) => {
+    setApprovalItems(prev => prev.map(item => 
+      item.id === itemId ? { ...item, dueDate } : item
     ));
   };
 
-  // 返信期限チェックとリマインド処理
-  useEffect(() => {
-    const checkReplyDueDates = () => {
-      const now = new Date();
-      
-      setSalesProcess(prev => prev.map(p => {
-        if (!p.replyDueDate || p.completed || p.replyStatus === 'received') return p;
-        
-        const due = new Date(p.replyDueDate);
-        const pastDue = now > due;
-        
-        if (pastDue && p.replyStatus === 'waiting') {
-          return {
-            ...p,
-            replyStatus: 'reminded',
-            lastReminderSentAt: now.toISOString(),
-            emailHistory: [...(p.emailHistory || []), { 
-              date: now.toISOString().split('T')[0], 
-              type: 'リマインド送信' 
-            }]
-          };
-        }
-        return p;
-      }));
-    };
-
-    // 初回チェック
-    checkReplyDueDates();
-    
-    // 1分ごとにチェック
-    const interval = setInterval(checkReplyDueDates, 60000);
-    
-    return () => clearInterval(interval);
-  }, []);
-
-  // テンプレート適用
-  const applyProcessTemplate = (template) => {
-    const newProcess = template.steps.map((step, index) => ({
-      id: Date.now() + index,
-      name: step,
-      type: processTypes.find(t => t.label === step)?.value || 'meeting',
-      completed: false,
-      targetDate: '',
-      reminder: false,
-      replyDueDate: '',
-      replyStatus: '',
-      emailHistory: []
-    }));
-    setSalesProcess(newProcess);
-    
-    // モーダルを閉じて変更を反映
-    alert(`「${template.name}」テンプレートを適用しました`);
+  // プロセステンプレート適用
+  const applyProcessTemplate = (templateId) => {
+    const template = processTemplates.find(t => t.id === templateId);
+    if (template) {
+      setSalesProcess([...template.process]);
+      setQuestionnaireItems([...template.questionnaire]);
+    }
   };
 
   // テンプレート削除
-  const deleteTemplate = (id) => {
-    setProcessTemplates(prev => prev.filter(template => template.id !== id));
+  const deleteTemplate = (templateId) => {
+    setProcessTemplates(prev => prev.filter(template => template.id !== templateId));
   };
 
   return {
@@ -371,6 +346,9 @@ export const useCustomerManagement = () => {
     setNewTemplateName,
     questionnaireItems,
     setQuestionnaireItems,
+    customers,
+    loading,
+    error,
     
     // 関数
     calculateProgress,
@@ -384,6 +362,11 @@ export const useCustomerManagement = () => {
     updateReplyDueDate,
     applyProcessTemplate,
     deleteTemplate,
+    fetchCustomers,
+    createCustomer,
+    updateCustomer,
+    deleteCustomer,
+    fetchCustomer,
     
     // 定数
     industryOptions,

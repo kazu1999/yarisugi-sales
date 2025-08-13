@@ -223,6 +223,7 @@ resource "aws_cognito_user_pool_client" "main" {
   generate_secret = false
 
   explicit_auth_flows = [
+    "ALLOW_USER_SRP_AUTH",
     "ALLOW_USER_PASSWORD_AUTH",
     "ALLOW_REFRESH_TOKEN_AUTH"
   ]
@@ -373,12 +374,13 @@ resource "aws_api_gateway_resource" "customers" {
   path_part   = "customers"
 }
 
-# 顧客一覧取得 (GET /customers) - 認証なし（開発・テスト用）
+# 顧客一覧取得 (GET /customers) - 認証付き
 resource "aws_api_gateway_method" "customers_get" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.customers.id
   http_method   = "GET"
-  authorization = "NONE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
 }
 
 # 顧客作成 (POST /customers)

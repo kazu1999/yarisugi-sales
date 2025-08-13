@@ -24,6 +24,7 @@ class AwsApiClient {
   async request(endpoint, options = {}) {
     try {
       const token = await this.getAuthToken();
+      console.log('🔑 認証トークン:', token ? '取得済み' : '未取得');
       
       const defaultHeaders = {
         'Content-Type': 'application/json',
@@ -40,22 +41,23 @@ class AwsApiClient {
       };
 
       const url = `${this.baseUrl}${endpoint}`;
-      console.log('API Request:', { url, method: config.method });
+      console.log('🌐 API Request:', { url, method: config.method, hasAuth: !!token });
+      console.log('🔑 Authorization Header:', token ? `Bearer ${token.substring(0, 20)}...` : 'なし');
 
       const response = await fetch(url, config);
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('API Error Response:', errorText);
+        console.error('❌ API Error Response:', errorText);
         throw new Error(`API Error: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
-      console.log('API Response:', data);
+      console.log('📦 API Response:', data);
       
       return data;
     } catch (error) {
-      console.error('API Request Error:', error);
+      console.error('❌ API Request Error:', error);
       throw error;
     }
   }
@@ -79,7 +81,15 @@ class AwsApiClient {
 
   // 顧客関連API
   async getCustomers() {
-    return this.request('/customers');
+    console.log('🌐 GET /customers リクエスト開始');
+    try {
+      const result = await this.request('/customers');
+      console.log('✅ GET /customers 成功:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ GET /customers エラー:', error);
+      throw error;
+    }
   }
 
   async getCustomer(customerId) {

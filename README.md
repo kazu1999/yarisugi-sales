@@ -9,11 +9,13 @@ Yarisugi Salesは、営業活動を効率化し、顧客情報を一元管理し
 - **ユーザー管理**: アカウント登録、ログイン、ログアウト
 - **認証ガード**: 未認証ユーザーの自動リダイレクト
 - **セッション管理**: 安全なユーザーセッション管理
-- **プライバシー重視**: オフライン対応とクラウド同期
+- **JWT認証**: API Gatewayでの認証付きエンドポイント
 
-### 📊 顧客管理システム
+### 📊 顧客管理システム ✅ **完成**
 - **新規顧客登録**: 会社名、担当者名、所在地、業種、サイトURL、SNS状況、LINE ID、メール、営業担当者、ステータス
-- **顧客一覧表示**: 顧客情報の一覧表示と詳細情報管理
+- **顧客一覧表示**: 認証されたユーザーの顧客情報を一覧表示
+- **顧客編集**: 既存顧客の情報を更新・編集
+- **顧客削除**: 不要な顧客データを削除
 - **ステータス管理**: 新規、商談中、成約、失注の進捗管理
 - **顧客詳細**: 独立ページでの顧客詳細表示（URL管理、ブックマーク対応）
 
@@ -57,13 +59,13 @@ Yarisugi Salesは、営業活動を効率化し、顧客情報を一元管理し
 - **ルーティング**: React Router DOM 7.8.0
 - **UIアイコン**: Lucide React 0.539.0
 - **スタイリング**: Tailwind CSS
-- **状態管理**: IndexedDB（オフライン対応）
+- **状態管理**: React Hooks + AWS API
 
 ### バックエンド（AWS）
 - **認証**: AWS Cognito
 - **データベース**: Amazon DynamoDB
 - **API**: Amazon API Gateway
-- **サーバーレス**: AWS Lambda（Python）
+- **サーバーレス**: AWS Lambda（Python 3.11）
 - **インフラ**: Terraform
 
 ## 🚀 セットアップ
@@ -105,10 +107,17 @@ chmod +x deploy.sh
 
 ```env
 # AWS設定
-VITE_COGNITO_USER_POOL_ID=ap-northeast-1_xxxxxxxxx
-VITE_COGNITO_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx
+VITE_COGNITO_USER_POOL_ID=ap-northeast-1_HePREiq48
+VITE_COGNITO_CLIENT_ID=51u2578ebgtvvao9kh5ldspcol
 VITE_AWS_REGION=ap-northeast-1
-VITE_API_GATEWAY_ENDPOINT=https://xxxxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/dev
+VITE_API_GATEWAY_ENDPOINT=https://xpx8akh2cj.execute-api.ap-northeast-1.amazonaws.com/dev
+
+# DynamoDBテーブル名（オプション）
+VITE_DYNAMODB_USERS_TABLE=yarisugi-sales-users-dev
+VITE_DYNAMODB_CUSTOMERS_TABLE=yarisugi-sales-customers-dev
+VITE_DYNAMODB_FAQS_TABLE=yarisugi-sales-faqs-dev
+VITE_DYNAMODB_KNOWLEDGE_TABLE=yarisugi-sales-knowledge-dev
+VITE_DYNAMODB_SALES_PROCESSES_TABLE=yarisugi-sales-sales-processes-dev
 ```
 
 ## 📁 プロジェクト構造
@@ -117,36 +126,47 @@ VITE_API_GATEWAY_ENDPOINT=https://xxxxxxxxxx.execute-api.ap-northeast-1.amazonaw
 yarisugi-sales/
 ├── src/                    # フロントエンド（React）
 │   ├── components/         # Reactコンポーネント
+│   │   ├── auth/          # 認証関連コンポーネント
+│   │   └── ...
 │   ├── contexts/          # React Context
+│   │   └── AuthContext.jsx # 認証状態管理
+│   ├── hooks/             # カスタムフック
+│   │   └── useCustomerManagement.js # 顧客管理フック
 │   ├── utils/             # ユーティリティ
 │   │   ├── awsConfig.js   # AWS設定
 │   │   ├── awsApiClient.js # APIクライアント
 │   │   ├── cognitoAuth.js # Cognito認証
-│   │   └── indexedDB.js   # IndexedDB操作
+│   │   └── constants.js   # 定数定義
+│   ├── App.jsx            # メインアプリケーション
+│   ├── YarisugiSales.jsx  # メインダッシュボード
 │   └── ...
 ├── backend/               # バックエンド（AWS）
 │   ├── lambda_functions/  # Python Lambda関数
 │   │   ├── common/        # 共通ライブラリ
+│   │   │   ├── __init__.py
+│   │   │   └── dynamodb.py # DynamoDB操作
 │   │   ├── customers.py   # 顧客管理API
 │   │   └── ...
 │   ├── terraform/         # インフラ設定
 │   │   ├── main.tf        # メイン設定
 │   │   └── variables.tf   # 変数定義
 │   └── deploy.sh          # デプロイスクリプト
-└── ...
+├── api-specification.yaml # OpenAPI仕様書
+└── README.md              # このファイル
 ```
 
 ## 🔧 開発ガイドライン
 
 ### フロントエンド開発
-- **オフライン対応**: IndexedDBでローカルデータ管理
-- **クラウド同期**: AWS API Gateway経由でDynamoDBと同期
 - **認証**: AWS Cognitoを使用したセキュアな認証
+- **API通信**: AWS API Gateway経由でDynamoDBと通信
+- **状態管理**: React Hooks + カスタムフック
+- **UI/UX**: Tailwind CSS + Lucide React
 
 ### バックエンド開発
-- **Python Lambda**: サーバーレス関数
+- **Python Lambda**: サーバーレス関数（Python 3.11）
 - **DynamoDB**: NoSQLデータベース
-- **API Gateway**: RESTful API
+- **API Gateway**: RESTful API（認証付き）
 
 ### インフラ管理
 - **Terraform**: Infrastructure as Code
@@ -156,17 +176,43 @@ yarisugi-sales/
 
 ### 認証
 - **Cognito User Pool**: ユーザー認証
-- **JWT Token**: API認証
+- **JWT Token**: API認証（Authorization: Bearer）
 
 ### エンドポイント
-- `GET /customers` - 顧客一覧取得
-- `POST /customers` - 顧客作成
-- `PUT /customers/{id}` - 顧客更新
-- `DELETE /customers/{id}` - 顧客削除
+
+#### 顧客管理API ✅ **完成**
+- `GET /customers` - 顧客一覧取得（認証付き）
+- `POST /customers` - 顧客作成（認証付き）
+- `PUT /customers/{id}` - 顧客更新（認証付き）
+- `DELETE /customers/{id}` - 顧客削除（認証付き）
+
+#### その他のAPI（開発中）
 - `GET /faqs` - FAQ一覧取得
 - `POST /faqs` - FAQ作成
 - `GET /knowledge` - ナレッジ一覧取得
 - `POST /knowledge` - ナレッジ作成
+
+### データ構造
+
+#### 顧客データ
+```json
+{
+  "id": "uuid",
+  "userId": "cognito-user-id",
+  "companyName": "株式会社サンプル",
+  "customerName": "田中太郎",
+  "location": "東京都渋谷区",
+  "industry": "IT・ソフトウェア",
+  "siteUrl": "https://example.com",
+  "snsStatus": "積極的に運用中",
+  "lineId": "example_line_id",
+  "email": "contact@example.com",
+  "salesPerson": "山田花子",
+  "status": "新規",
+  "createdAt": "2025-08-13T00:00:00.000000",
+  "updatedAt": "2025-08-13T00:00:00.000000"
+}
+```
 
 ## 🔐 AWS Cognito認証の統合
 
@@ -245,6 +291,21 @@ useEffect(() => {
 }, [navigate]);
 ```
 
+#### 5. DynamoDB更新エラー
+**エラー**: `Invalid UpdateExpression: An expression attribute name used in the document path is not defined`
+
+**解決方法**: Lambda関数で`ExpressionAttributeNames`を正しく渡す
+```python
+# customers.py
+result = dynamodb_client.update_item(
+    CUSTOMERS_TABLE,
+    key,
+    update_expression,
+    expression_values,
+    expression_names  # このパラメータを追加
+)
+```
+
 ### デバッグ方法
 1. **ブラウザの開発者ツール**: F12でコンソールを確認
 2. **AWS CloudWatch**: Lambda関数のログを確認
@@ -315,7 +376,7 @@ aws cognito-idp admin-initiate-auth \
   "customerName": "田中太郎",
   "location": "東京都渋谷区",
   "industry": "IT・ソフトウェア",
-  "websiteUrl": "https://example.com",
+  "siteUrl": "https://example.com",
   "email": "contact@example.com",
   "status": "新規",
   "notes": "Swagger Editorからのテスト"
@@ -353,6 +414,15 @@ APIは以下のドメインからのアクセスを許可しています：
 
 ## 📝 最近の更新
 
+### v2.3.0 - 顧客管理システム完成 ✅
+- ✅ **顧客一覧表示**: 認証されたユーザーの顧客データを表示
+- ✅ **顧客新規登録**: フォームから新しい顧客を追加
+- ✅ **顧客編集**: 既存顧客の情報を更新・編集
+- ✅ **顧客削除**: 不要な顧客データを削除
+- ✅ **DynamoDB更新機能**: ExpressionAttributeNamesの修正
+- ✅ **認証付きAPI**: GET /customersエンドポイントの認証設定
+- ✅ **エラーハンドリング**: 顧客管理関連のエラー処理改善
+
 ### v2.2.0 - APIテストとSwagger Editor対応
 - ✅ 認証なしGET /customersエンドポイントの実装
 - ✅ Swagger Editor用CORS設定の追加
@@ -389,7 +459,7 @@ APIは以下のドメインからのアクセスを許可しています：
 - **IAM認証**: 細かい権限管理
 - **DynamoDB**: 暗号化されたデータ保存
 - **API Gateway**: セキュアなAPI通信
-- **オフライン対応**: ローカルデータの安全な管理
+- **JWT認証**: 安全なトークンベース認証
 
 ## 💰 コスト
 
@@ -418,3 +488,5 @@ APIは以下のドメインからのアクセスを許可しています：
 ---
 
 **Yarisugi Sales** - 営業活動を効率化し、顧客との関係を深めるための総合営業支援システム
+
+**最新バージョン**: v2.3.0 - 顧客管理システム完成 🎉

@@ -4,6 +4,10 @@ import PrivateRoute from './components/auth/PrivateRoute';
 import Login from './components/auth/Login';
 import YarisugiSales from './YarisugiSales';
 import CustomerDetailPage from './pages/CustomerDetailPage';
+import { configureAmplify } from './utils/awsConfig';
+
+// AWS Amplify設定を初期化
+configureAmplify();
 
 function App() {
   return (

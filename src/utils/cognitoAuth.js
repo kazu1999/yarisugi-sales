@@ -125,6 +125,7 @@ export const getCurrentUser = async () => {
   try {
     const user = await amplifyGetCurrentUser();
     console.log('Cognito: 現在のユーザー', user);
+    console.log('🔍 ユーザーID:', user.userId || user.username);
     return user;
   } catch (error) {
     console.log('Cognito: 認証されていないユーザー');
@@ -235,10 +236,29 @@ export const updateUserProfile = async (updates) => {
 // 認証トークンを取得
 export const getAuthToken = async () => {
   try {
+    console.log('🔑 認証トークン取得開始');
     const session = await fetchAuthSession();
-    return session.tokens.idToken.toString();
+    const token = session.tokens.idToken.toString();
+    console.log('✅ 認証トークン取得成功:', token ? 'トークンあり' : 'トークンなし');
+    return token;
   } catch (error) {
-    console.error('Cognito: トークン取得エラー', error);
+    console.error('❌ Cognito: トークン取得エラー', error);
+    return null;
+  }
+};
+
+// 認証トークンからユーザーIDを取得
+export const getUserIdFromToken = async () => {
+  try {
+    const session = await fetchAuthSession();
+    const token = session.tokens.idToken;
+    const payload = JSON.parse(atob(token.toString().split('.')[1]));
+    console.log('🔍 トークンペイロード:', payload);
+    console.log('🔍 ユーザーID (sub):', payload.sub);
+    console.log('🔍 ユーザー名 (cognito:username):', payload['cognito:username']);
+    return payload.sub || payload['cognito:username'];
+  } catch (error) {
+    console.error('❌ ユーザーID取得エラー:', error);
     return null;
   }
 }; 
