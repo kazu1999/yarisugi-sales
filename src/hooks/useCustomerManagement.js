@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
   industryOptions, 
   snsStatusOptions, 
@@ -22,6 +22,16 @@ export const useCustomerManagement = () => {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  
+  // 検索・フィルタリング状態
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filters, setFilters] = useState({
+    status: '',
+    industry: '',
+    location: '',
+    salesPerson: ''
+  });
+  const [showFilters, setShowFilters] = useState(false);
   
   // 顧客登録フォーム
   const [customerForm, setCustomerForm] = useState({
@@ -166,6 +176,75 @@ export const useCustomerManagement = () => {
       console.log('🏁 顧客データ取得完了');
     }
   };
+
+  // フィルタリングされた顧客データ
+  const filteredCustomers = useMemo(() => {
+    return customers.filter(customer => {
+      // 検索クエリによるフィルタリング
+      const matchesSearch = !searchQuery || 
+        customer.companyName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        customer.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        customer.email?.toLowerCase().includes(searchQuery.toLowerCase());
+
+      // ステータスフィルター
+      const matchesStatus = !filters.status || customer.status === filters.status;
+
+      // 業種フィルター
+      const matchesIndustry = !filters.industry || customer.industry === filters.industry;
+
+      // 地域フィルター（部分一致）
+      const matchesLocation = !filters.location || 
+        customer.location?.toLowerCase().includes(filters.location.toLowerCase());
+
+      // 営業担当者フィルター
+      const matchesSalesPerson = !filters.salesPerson || 
+        customer.salesPerson === filters.salesPerson;
+
+      return matchesSearch && matchesStatus && matchesIndustry && matchesLocation && matchesSalesPerson;
+    });
+  }, [customers, searchQuery, filters]);
+
+  // フィルターをクリア
+  const clearFilters = () => {
+    setSearchQuery('');
+    setFilters({
+      status: '',
+      industry: '',
+      location: '',
+      salesPerson: ''
+    });
+  };
+
+  // フィルターを更新
+  const updateFilter = (key, value) => {
+    setFilters(prev => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  // アクティブなフィルター数を取得
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (searchQuery) count++;
+    if (filters.status) count++;
+    if (filters.industry) count++;
+    if (filters.location) count++;
+    if (filters.salesPerson) count++;
+    return count;
+  }, [searchQuery, filters]);
+
+  // 営業担当者の一覧を取得
+  const salesPersons = useMemo(() => {
+    const persons = [...new Set(customers.map(customer => customer.salesPerson).filter(Boolean))];
+    return persons.sort();
+  }, [customers]);
+
+  // 地域の一覧を取得
+  const locations = useMemo(() => {
+    const locs = [...new Set(customers.map(customer => customer.location).filter(Boolean))];
+    return locs.sort();
+  }, [customers]);
 
   // 顧客作成
   const createCustomer = async (customerData) => {
@@ -349,6 +428,20 @@ export const useCustomerManagement = () => {
     customers,
     loading,
     error,
+    
+    // 検索・フィルタリング状態
+    searchQuery,
+    setSearchQuery,
+    filters,
+    setFilters,
+    showFilters,
+    setShowFilters,
+    filteredCustomers,
+    clearFilters,
+    updateFilter,
+    activeFilterCount,
+    salesPersons,
+    locations,
     
     // 関数
     calculateProgress,
