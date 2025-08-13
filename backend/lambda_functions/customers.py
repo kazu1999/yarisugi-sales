@@ -54,16 +54,25 @@ def get_user_id_from_event(event):
     イベントからユーザーIDを取得
     """
     try:
+        print(f"🔍 イベントからユーザーID取得開始")
+        print(f"📋 イベント構造: {json.dumps(event, default=str)}")
+        
         # Cognito認証情報からユーザーIDを取得
         claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
+        print(f"🔑 認証クレーム: {claims}")
+        
         user_id = claims.get('sub') or claims.get('cognito:username')
+        print(f"👤 取得されたユーザーID: {user_id}")
         
         # 認証なしの場合はテスト用ユーザーIDを使用
         if not user_id:
             user_id = 'test-user-123'
+            print(f"⚠️ 認証なしのためテストユーザーIDを使用: {user_id}")
             
+        print(f"✅ 最終ユーザーID: {user_id}")
         return user_id
-    except:
+    except Exception as e:
+        print(f"❌ ユーザーID取得エラー: {str(e)}")
         return 'test-user-123'
 
 def get_customers(user_id):
@@ -71,21 +80,32 @@ def get_customers(user_id):
     ユーザーの顧客一覧を取得
     """
     try:
+        print(f"🔍 顧客一覧取得開始 - ユーザーID: {user_id}")
+        print(f"📋 テーブル名: {CUSTOMERS_TABLE}")
+        
         # ユーザーIDでクエリ
+        query_params = {':pk': f'USER#{user_id}'}
+        print(f"🔎 クエリパラメータ: {query_params}")
+        
         result = dynamodb_client.query(
             CUSTOMERS_TABLE,
             'PK = :pk',
-            {':pk': f'USER#{user_id}'}
+            query_params
         )
         
+        print(f"📦 DynamoDB結果: {result}")
+        
         if result['success']:
+            print(f"✅ 顧客データ取得成功: {len(result['data'])}件")
             return create_response(200, {
                 'customers': result['data']
             })
         else:
+            print(f"❌ DynamoDBエラー: {result['error']}")
             return create_response(500, {'error': result['error']})
             
     except Exception as e:
+        print(f"❌ 例外エラー: {str(e)}")
         return create_response(500, {'error': str(e)})
 
 def get_customer(user_id, customer_id):
@@ -199,7 +219,8 @@ def update_customer(user_id, customer_id, body):
                 'SK': f'CUSTOMER#{customer_id}'
             },
             'SET ' + ', '.join(update_expressions),
-            expression_values
+            expression_values,
+            expression_names
         )
         
         if result['success']:

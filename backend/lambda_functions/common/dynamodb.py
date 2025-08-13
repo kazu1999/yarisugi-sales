@@ -112,16 +112,22 @@ class DynamoDBClient:
             }
     
     def update_item(self, table_name: str, key: Dict[str, Any], 
-                   update_expression: str, expression_attribute_values: Dict[str, Any]) -> Dict[str, Any]:
+                   update_expression: str, expression_attribute_values: Dict[str, Any],
+                   expression_attribute_names: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """アイテムを更新"""
         try:
             table = self.get_table(table_name)
-            response = table.update_item(
-                Key=key,
-                UpdateExpression=update_expression,
-                ExpressionAttributeValues=expression_attribute_values,
-                ReturnValues="ALL_NEW"
-            )
+            update_kwargs = {
+                'Key': key,
+                'UpdateExpression': update_expression,
+                'ExpressionAttributeValues': expression_attribute_values,
+                'ReturnValues': "ALL_NEW"
+            }
+            
+            if expression_attribute_names:
+                update_kwargs['ExpressionAttributeNames'] = expression_attribute_names
+            
+            response = table.update_item(**update_kwargs)
             return {
                 'success': True,
                 'data': response.get('Attributes', {})

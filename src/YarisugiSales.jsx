@@ -14,12 +14,27 @@ import {
 } from 'lucide-react';
 
 // 新しいコンポーネントとカスタムフックのインポート
-// import { useCustomerManagement } from './hooks/useCustomerManagement';
+import { useCustomerManagement } from './hooks/useCustomerManagement';
 // import CustomerDetail from './components/customer/CustomerDetail';
 
 const YarisugiDashboard = () => {
   const navigate = useNavigate();
   const { currentUser, logout } = useAuth();
+  
+  // 顧客管理フックを使用
+  const {
+    customers,
+    loading,
+    error,
+    customerForm: hookCustomerForm,
+    setCustomerForm: setHookCustomerForm,
+    fetchCustomers,
+    createCustomer,
+    updateCustomer,
+    deleteCustomer,
+    fetchCustomer
+  } = useCustomerManagement();
+  
   const [activePage, setActivePage] = useState('top');
   const [showApproval, setShowApproval] = useState(false);
   const [customersPerPage, setCustomersPerPage] = useState(50);
@@ -55,19 +70,13 @@ const YarisugiDashboard = () => {
   const [showLineComposer, setShowLineComposer] = useState(false);
   const [selectedProcess, setSelectedProcess] = useState(null);
   
-  // 顧客登録フォーム
-  const [customerForm, setCustomerForm] = useState({
-    companyName: '',
-    customerName: '',
-    location: '',
-    industry: '',
-    siteUrl: '',
-    snsStatus: '',
-    lineId: '',
-    email: '',
-    salesPerson: '',
-    status: ''
-  });
+  // 顧客フォーム関連
+  const [showCustomerForm, setShowCustomerForm] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState(null);
+  
+  // 顧客登録フォーム（フックから取得）
+  const customerForm = hookCustomerForm;
+  const setCustomerForm = setHookCustomerForm;
 
   // 業種オプション
   const industryOptions = [
@@ -796,6 +805,64 @@ const YarisugiDashboard = () => {
   // テンプレート削除
   const deleteTemplate = (id) => {
     setProcessTemplates(prev => prev.filter(template => template.id !== id));
+  };
+
+  // 顧客フォームのリセット
+  const resetCustomerForm = () => {
+    setCustomerForm({
+      companyName: '',
+      customerName: '',
+      location: '',
+      industry: '',
+      siteUrl: '',
+      snsStatus: '',
+      lineId: '',
+      email: '',
+      salesPerson: '',
+      status: '新規'
+    });
+    setEditingCustomer(null);
+  };
+
+  // 顧客作成・更新ハンドラー
+  const handleSubmitCustomer = async (e) => {
+    e.preventDefault();
+    
+    try {
+      if (editingCustomer) {
+        // 更新
+        await updateCustomer(editingCustomer.id, customerForm);
+        alert('顧客情報を更新しました');
+      } else {
+        // 作成
+        await createCustomer(customerForm);
+        alert('顧客を登録しました');
+      }
+      
+      setShowCustomerForm(false);
+      resetCustomerForm();
+    } catch (error) {
+      console.error('顧客保存エラー:', error);
+      alert('顧客の保存に失敗しました');
+    }
+  };
+
+  // 顧客編集ハンドラー
+  const handleEditCustomer = (customer) => {
+    setEditingCustomer(customer);
+    setCustomerForm({
+      companyName: customer.companyName || '',
+      customerName: customer.customerName || '',
+      location: customer.location || '',
+      industry: customer.industry || '',
+      siteUrl: customer.siteUrl || '',
+      snsStatus: customer.snsStatus || '',
+      lineId: customer.lineId || '',
+      email: customer.email || '',
+      salesPerson: customer.salesPerson || '',
+      status: customer.status || '新規'
+    });
+    setShowCustomerForm(true);
   };
 
   return (
@@ -1827,6 +1894,29 @@ const YarisugiDashboard = () => {
                 <p className="text-gray-600 mt-2">登録されている顧客の管理</p>
               </div>
 
+              {/* デバッグ情報 */}
+              <div className="mb-4 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                <p>Debug: customers.length = {customers.length}</p>
+                <p>Debug: loading = {loading.toString()}</p>
+                <p>Debug: error = {error || 'なし'}</p>
+                <button 
+                  onClick={() => {
+                    console.log('🔄 手動でデータ再取得');
+                    fetchCustomers();
+                  }}
+                  className="mt-2 px-2 py-1 bg-blue-500 text-white rounded text-xs"
+                >
+                  データ再取得
+                </button>
+              </div>
+
+              {/* エラーメッセージ */}
+              {error && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-red-800">{error}</p>
+                </div>
+              )}
+
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                   <h2 className="text-lg font-semibold text-gray-900">顧客リスト</h2>
@@ -1836,128 +1926,90 @@ const YarisugiDashboard = () => {
                       placeholder="顧客名・会社名で検索..."
                       className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
-                    <Button size="sm">新規登録</Button>
+                    <Button size="sm" onClick={() => setShowCustomerForm(true)}>新規登録</Button>
                   </div>
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">会社名</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">担当者</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">業種</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ステータス</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">担当営業</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">最終更新</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">株式会社テックソリューション</div>
-                          <div className="text-sm text-gray-500">tech-solution.com</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">田中一郎</div>
-                          <div className="text-sm text-gray-500">tanaka@tech-solution.com</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">IT・通信</td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">商談中</span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">山田太郎</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">2024-01-15</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex gap-2">
-                          <Button size="sm" variant="secondary">編集</Button>
-                          <Button size="sm" onClick={() => showCustomerDetails({
-                            id: 'tech-solution-001',
-                            name: '株式会社テックソリューション',
-                            contact: '田中一郎',
-                            email: 'tanaka@tech-solution.com',
-                            phone: '03-1234-5678',
-                            industry: 'IT・通信'
-                          })}>詳細</Button>
-                        </td>
-                      </tr>
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">株式会社グローバル商事</div>
-                          <div className="text-sm text-gray-500">global-trading.co.jp</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">佐藤花子</div>
-                          <div className="text-sm text-gray-500">sato@global-trading.co.jp</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">小売・流通</td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">成約</span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">佐藤花子</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">2024-01-12</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex gap-2">
-                          <Button size="sm" variant="secondary">編集</Button>
-                          <Button size="sm" onClick={() => showCustomerDetails({
-                            id: 'global-trading-002',
-                            name: '株式会社グローバル商事',
-                            contact: '佐藤花子',
-                            email: 'sato@global-trading.co.jp',
-                            phone: '03-2345-6789',
-                            industry: '小売・流通'
-                          })}>詳細</Button>
-                        </td>
-                      </tr>
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900">株式会社製造工業</div>
-                          <div className="text-sm text-gray-500">manufacturing.com</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">鈴木次郎</div>
-                          <div className="text-sm text-gray-500">suzuki@manufacturing.com</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">製造業</td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">新規</span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">鈴木一郎</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">2024-01-10</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex gap-2">
-                          <Button size="sm" variant="secondary">編集</Button>
-                          <Button size="sm" onClick={() => showCustomerDetails({
-                            id: 'manufacturing-003',
-                            name: '株式会社製造工業',
-                            contact: '鈴木次郎',
-                            email: 'suzuki@manufacturing.com',
-                            phone: '03-3456-7890',
-                            industry: '製造業'
-                          })}>詳細</Button>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="px-6 py-4 border-t border-gray-200 flex justify-between items-center">
-                  <div className="flex items-center gap-4">
-                    <div className="text-sm text-gray-500">
-                      全 3 件中 1-3 件を表示
+                  {loading ? (
+                    <div className="p-8 text-center">
+                      <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                      <p className="mt-2 text-gray-600">顧客データを読み込み中...</p>
                     </div>
-                    <select
-                      value={customersPerPage}
-                      onChange={(e) => setCustomersPerPage(Number(e.target.value))}
-                      className="px-3 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value={50}>50件/ページ</option>
-                      <option value={100}>100件/ページ</option>
-                      <option value={200}>200件/ページ</option>
-                    </select>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="secondary">前へ</Button>
-                    <Button size="sm" variant="secondary">次へ</Button>
-                  </div>
+                  ) : customers.length === 0 ? (
+                    <div className="p-8 text-center">
+                      <p className="text-gray-500">登録されている顧客がありません</p>
+                      <Button 
+                        size="sm" 
+                        className="mt-2"
+                        onClick={() => setShowCustomerForm(true)}
+                      >
+                        最初の顧客を登録
+                      </Button>
+                    </div>
+                  ) : (
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">会社名</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">担当者</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">業種</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ステータス</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">担当営業</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">最終更新</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {customers.map((customer) => (
+                          <tr key={customer.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{customer.companyName}</div>
+                              {customer.siteUrl && (
+                                <div className="text-sm text-gray-500">{customer.siteUrl}</div>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">{customer.customerName}</div>
+                              {customer.email && (
+                                <div className="text-sm text-gray-500">{customer.email}</div>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.industry || '-'}</td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                customer.status === '新規' ? 'bg-blue-100 text-blue-800' :
+                                customer.status === '商談中' ? 'bg-yellow-100 text-yellow-800' :
+                                customer.status === '成約' ? 'bg-green-100 text-green-800' :
+                                'bg-red-100 text-red-800'
+                              }`}>
+                                {customer.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.salesPerson || '-'}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {customer.updatedAt ? new Date(customer.updatedAt).toLocaleDateString('ja-JP') : '-'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex gap-2">
+                              <Button 
+                                size="sm" 
+                                variant="secondary"
+                                onClick={() => handleEditCustomer(customer)}
+                              >
+                                編集
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                onClick={() => navigate(`/customer/${customer.id}`)}
+                              >
+                                詳細
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
               </div>
             </div>
@@ -2951,6 +3003,180 @@ ${selectedProcess.name}の件でご連絡させていただきました。
                     保存
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* 顧客作成・編集フォームモーダル */}
+          {showCustomerForm && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+                <h3 className="text-lg font-bold mb-4">
+                  {editingCustomer ? '顧客情報編集' : '新規顧客登録'}
+                </h3>
+                
+                <form onSubmit={handleSubmitCustomer} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        会社名 <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={customerForm.companyName}
+                        onChange={(e) => setCustomerForm(prev => ({ ...prev, companyName: e.target.value }))}
+                        required
+                        className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                        placeholder="株式会社サンプル"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        担当者名 <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={customerForm.customerName}
+                        onChange={(e) => setCustomerForm(prev => ({ ...prev, customerName: e.target.value }))}
+                        required
+                        className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                        placeholder="田中太郎"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        所在地
+                      </label>
+                      <input
+                        type="text"
+                        value={customerForm.location}
+                        onChange={(e) => setCustomerForm(prev => ({ ...prev, location: e.target.value }))}
+                        className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                        placeholder="東京都渋谷区"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        業種
+                      </label>
+                      <select
+                        value={customerForm.industry}
+                        onChange={(e) => setCustomerForm(prev => ({ ...prev, industry: e.target.value }))}
+                        className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">選択してください</option>
+                        {industryOptions.map(option => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        サイトURL
+                      </label>
+                      <input
+                        type="url"
+                        value={customerForm.siteUrl}
+                        onChange={(e) => setCustomerForm(prev => ({ ...prev, siteUrl: e.target.value }))}
+                        className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                        placeholder="https://example.com"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        メールアドレス
+                      </label>
+                      <input
+                        type="email"
+                        value={customerForm.email}
+                        onChange={(e) => setCustomerForm(prev => ({ ...prev, email: e.target.value }))}
+                        className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                        placeholder="contact@example.com"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        LINE ID
+                      </label>
+                      <input
+                        type="text"
+                        value={customerForm.lineId}
+                        onChange={(e) => setCustomerForm(prev => ({ ...prev, lineId: e.target.value }))}
+                        className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                        placeholder="example_line_id"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        営業担当者
+                      </label>
+                      <input
+                        type="text"
+                        value={customerForm.salesPerson}
+                        onChange={(e) => setCustomerForm(prev => ({ ...prev, salesPerson: e.target.value }))}
+                        className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                        placeholder="山田花子"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        ステータス
+                      </label>
+                      <select
+                        value={customerForm.status}
+                        onChange={(e) => setCustomerForm(prev => ({ ...prev, status: e.target.value }))}
+                        className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                      >
+                        {customerStatuses.map(status => (
+                          <option key={status} value={status}>{status}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        SNS運用状況
+                      </label>
+                      <select
+                        value={customerForm.snsStatus}
+                        onChange={(e) => setCustomerForm(prev => ({ ...prev, snsStatus: e.target.value }))}
+                        className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">選択してください</option>
+                        {snsStatusOptions.map(option => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-end space-x-3 pt-4 border-t">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCustomerForm(false);
+                        resetCustomerForm();
+                      }}
+                      className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                    >
+                      キャンセル
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                    >
+                      {editingCustomer ? '更新' : '登録'}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}
