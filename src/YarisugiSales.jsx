@@ -32,7 +32,22 @@ const YarisugiDashboard = () => {
     createCustomer,
     updateCustomer,
     deleteCustomer,
-    fetchCustomer
+    fetchCustomer,
+    // 検索・フィルタリング機能
+    searchQuery,
+    setSearchQuery,
+    filters,
+    setFilters,
+    showFilters,
+    setShowFilters,
+    filteredCustomers,
+    clearFilters,
+    updateFilter,
+    activeFilterCount,
+    salesPersons,
+    locations,
+    industryOptions,
+    customerStatuses
   } = useCustomerManagement();
   
   const [activePage, setActivePage] = useState('top');
@@ -77,35 +92,6 @@ const YarisugiDashboard = () => {
   // 顧客登録フォーム（フックから取得）
   const customerForm = hookCustomerForm;
   const setCustomerForm = setHookCustomerForm;
-
-  // 業種オプション
-  const industryOptions = [
-    '製造業',
-    'IT・通信',
-    '小売・流通',
-    '建設・不動産',
-    'サービス業',
-    '金融・保険',
-    '医療・福祉',
-    'その他'
-  ];
-
-  // SNS運用状況オプション
-  const snsStatusOptions = [
-    '積極的に運用中（毎日投稿）',
-    '定期的に運用中（週2-3回）',
-    'たまに更新（月数回）',
-    'アカウントはあるが更新なし',
-    'SNS未運用'
-  ];
-
-  // ステータスオプション
-  const customerStatuses = [
-    '新規',
-    '商談中',
-    '成約',
-    '失注'
-  ];
 
   // AI自動化設定
   const [aiSettings, setAiSettings] = useState({
@@ -668,7 +654,8 @@ const YarisugiDashboard = () => {
     const variants = {
       primary: "bg-indigo-500 text-white hover:bg-indigo-600 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-300",
       secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200",
-      danger: "bg-red-500 text-white hover:bg-red-600"
+      danger: "bg-red-500 text-white hover:bg-red-600",
+      outline: "bg-white text-indigo-600 border border-indigo-300 hover:bg-indigo-50"
     };
     const sizes = {
       sm: "px-4 py-2 text-sm",
@@ -818,7 +805,7 @@ const YarisugiDashboard = () => {
       snsStatus: '',
       lineId: '',
       email: '',
-      salesPerson: '',
+      salesPerson: '山田太郎',
       status: '新規'
     });
     setEditingCustomer(null);
@@ -1897,8 +1884,10 @@ const YarisugiDashboard = () => {
               {/* デバッグ情報 */}
               <div className="mb-4 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
                 <p>Debug: customers.length = {customers.length}</p>
+                <p>Debug: filteredCustomers.length = {filteredCustomers.length}</p>
                 <p>Debug: loading = {loading.toString()}</p>
                 <p>Debug: error = {error || 'なし'}</p>
+                <p>Debug: activeFilterCount = {activeFilterCount}</p>
                 <button 
                   onClick={() => {
                     console.log('🔄 手動でデータ再取得');
@@ -1918,15 +1907,142 @@ const YarisugiDashboard = () => {
               )}
 
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-                  <h2 className="text-lg font-semibold text-gray-900">顧客リスト</h2>
-                  <div className="flex gap-3">
-                    <input
-                      type="text"
-                      placeholder="顧客名・会社名で検索..."
-                      className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                    <Button size="sm" onClick={() => setShowCustomerForm(true)}>新規登録</Button>
+                {/* 検索・フィルターバー */}
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex flex-col gap-4">
+                    {/* 検索バー */}
+                    <div className="flex gap-3 items-center">
+                      <div className="flex-1 relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                        <input
+                          type="text"
+                          placeholder="顧客名・会社名・メールで検索..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant={showFilters ? "primary" : "secondary"}
+                        onClick={() => setShowFilters(!showFilters)}
+                        className="flex items-center gap-2"
+                      >
+                        <Filter className="w-4 h-4" />
+                        フィルター
+                        {activeFilterCount > 0 && (
+                          <span className="bg-red-500 text-white text-xs rounded-full px-2 py-1 min-w-[20px]">
+                            {activeFilterCount}
+                          </span>
+                        )}
+                      </Button>
+                      {activeFilterCount > 0 && (
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={clearFilters}
+                          className="flex items-center gap-2"
+                        >
+                          <X className="w-4 h-4" />
+                          クリア
+                        </Button>
+                      )}
+                      <Button size="sm" onClick={() => setShowCustomerForm(true)}>新規登録</Button>
+                    </div>
+
+                    {/* フィルターパネル */}
+                    {showFilters && (
+                      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                          {/* ステータスフィルター */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">ステータス</label>
+                            <select
+                              value={filters.status}
+                              onChange={(e) => updateFilter('status', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            >
+                              <option value="">すべて</option>
+                              {customerStatuses.map(status => (
+                                <option key={status} value={status}>{status}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* 業種フィルター */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">業種</label>
+                            <select
+                              value={filters.industry}
+                              onChange={(e) => updateFilter('industry', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            >
+                              <option value="">すべて</option>
+                              {industryOptions.map(industry => (
+                                <option key={industry} value={industry}>{industry}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* 地域フィルター */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">地域</label>
+                            <select
+                              value={filters.location}
+                              onChange={(e) => updateFilter('location', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            >
+                              <option value="">すべて</option>
+                              {locations.map(location => (
+                                <option key={location} value={location}>{location}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* 営業担当者フィルター */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">営業担当者</label>
+                            <select
+                              value={filters.salesPerson}
+                              onChange={(e) => updateFilter('salesPerson', e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            >
+                              <option value="">すべて</option>
+                              {salesPersons.map(person => (
+                                <option key={person} value={person}>{person}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 検索結果サマリー */}
+                <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
+                  <div className="flex justify-between items-center">
+                    <div className="text-sm text-gray-600">
+                      {activeFilterCount > 0 ? (
+                        <span>
+                          検索結果: <span className="font-semibold">{filteredCustomers.length}</span>件
+                          {customers.length !== filteredCustomers.length && (
+                            <span className="text-gray-500">（全{customers.length}件中）</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span>全顧客: <span className="font-semibold">{customers.length}</span>件</span>
+                      )}
+                    </div>
+                    {activeFilterCount > 0 && (
+                      <button
+                        onClick={clearFilters}
+                        className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                      >
+                        <X className="w-3 h-3" />
+                        フィルターをクリア
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1936,16 +2052,31 @@ const YarisugiDashboard = () => {
                       <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                       <p className="mt-2 text-gray-600">顧客データを読み込み中...</p>
                     </div>
-                  ) : customers.length === 0 ? (
+                  ) : filteredCustomers.length === 0 ? (
                     <div className="p-8 text-center">
-                      <p className="text-gray-500">登録されている顧客がありません</p>
-                      <Button 
-                        size="sm" 
-                        className="mt-2"
-                        onClick={() => setShowCustomerForm(true)}
-                      >
-                        最初の顧客を登録
-                      </Button>
+                      {customers.length === 0 ? (
+                        <>
+                          <p className="text-gray-500">登録されている顧客がありません</p>
+                          <Button 
+                            size="sm" 
+                            className="mt-2"
+                            onClick={() => setShowCustomerForm(true)}
+                          >
+                            最初の顧客を登録
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-gray-500">検索条件に一致する顧客が見つかりません</p>
+                          <Button 
+                            size="sm" 
+                            className="mt-2"
+                            onClick={clearFilters}
+                          >
+                            フィルターをクリア
+                          </Button>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <table className="w-full">
@@ -1961,7 +2092,7 @@ const YarisugiDashboard = () => {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {customers.map((customer) => (
+                        {filteredCustomers.map((customer) => (
                           <tr key={customer.id} className="hover:bg-gray-50">
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm font-medium text-gray-900">{customer.companyName}</div>
