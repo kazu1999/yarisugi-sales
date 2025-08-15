@@ -17,9 +17,8 @@ dynamodb_client = DynamoDBClient()
 def create_response(status_code: int, body: Dict[str, Any], event: Dict[str, Any] = None, extra_headers: Dict[str, str] = None) -> Dict[str, Any]:
     """
     API Gateway (Lambda proxy) で常に正しいCORSヘッダーを返すための共通レスポンス関数。
-    - DELETE を含む Allow-Methods を毎回明示
-    - 認証付きCORSに対応（Origin があるときは反射し、Vary: Origin を付与）
-    - '*' と Allow-Credentials の同時使用を避ける（ブラウザ仕様）
+    - 全オリジン許可（*）でシンプルに
+    - Bearerトークン認証のみ対応（Cookie等は使用しない）
     - プリフライトのキャッシュを効かせる（Max-Age）
     """
     ALLOWED_METHODS = 'GET,POST,PUT,DELETE,OPTIONS'
@@ -29,26 +28,13 @@ def create_response(status_code: int, body: Dict[str, Any], event: Dict[str, Any
 
     headers = {
         'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',          # 全オリジン許可
+        'Access-Control-Allow-Credentials': 'false', # Cookie等は使わない前提
         'Access-Control-Allow-Methods': ALLOWED_METHODS,
         'Access-Control-Allow-Headers': ALLOWED_HEADERS,
         'Access-Control-Expose-Headers': EXPOSED_HEADERS,
         'Access-Control-Max-Age': MAX_AGE_SECONDS,
     }
-
-    # Origin を動的に反射（認証付きに安全）
-    origin = None
-    if event and isinstance(event.get('headers'), dict):
-        h = event['headers']
-        origin = h.get('origin') or h.get('Origin')
-
-    if origin:
-        headers['Access-Control-Allow-Origin'] = origin
-        headers['Access-Control-Allow-Credentials'] = 'true'
-        headers['Vary'] = 'Origin'  # キャッシュ分離
-    else:
-        # 認証クッキー等がない場合のみ '*' を使用
-        headers['Access-Control-Allow-Origin'] = '*'
-        headers['Access-Control-Allow-Credentials'] = 'false'
 
     # 追加ヘッダ（必要なら呼び出し側から上書き）
     if extra_headers:

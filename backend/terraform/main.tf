@@ -233,8 +233,8 @@ resource "aws_cognito_user_pool_client" "main" {
     "ALLOW_REFRESH_TOKEN_AUTH"
   ]
 
-  callback_urls = ["http://localhost:5173", "https://your-domain.com"]
-  logout_urls   = ["http://localhost:5173", "https://your-domain.com"]
+  callback_urls = ["http://localhost:5173", "http://localhost:5174", "https://your-domain.com"]
+  logout_urls   = ["http://localhost:5173", "http://localhost:5174", "https://your-domain.com"]
 
   token_validity_units {
     access_token  = "hours"
@@ -696,24 +696,11 @@ resource "aws_api_gateway_integration" "faqs_options" {
   resource_id = aws_api_gateway_resource.faqs.id
   http_method = aws_api_gateway_method.faqs_options.http_method
 
-  type = "MOCK"
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = local.faqs_integration_uri
 
-  request_templates = {
-    "application/json" = "{\"statusCode\": 200}"
-  }
-}
-
-# CORS用の統合 (faq)
-resource "aws_api_gateway_integration" "faq_options" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.faq.id
-  http_method = aws_api_gateway_method.faq_options.http_method
-
-  type = "MOCK"
-
-  request_templates = {
-    "application/json" = "{\"statusCode\": 200}"
-  }
+  depends_on = [aws_lambda_permission.faqs_api]
 }
 
 # CORS用のメソッドレスポンス (customers)
@@ -769,6 +756,96 @@ resource "aws_api_gateway_integration_response" "customer_options" {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Origin'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
     "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# CORS用のメソッドレスポンス (faqs)
+resource "aws_api_gateway_method_response" "faqs_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faqs.id
+  http_method = aws_api_gateway_method.faqs_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# CORS用の統合レスポンス (faqs)
+resource "aws_api_gateway_integration_response" "faqs_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faqs.id
+  http_method = aws_api_gateway_method.faqs_options.http_method
+  status_code = aws_api_gateway_method_response.faqs_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Authorization,Content-Type,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,Origin'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# CORS用の統合 (faq)
+resource "aws_api_gateway_integration" "faq_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faq.id
+  http_method = aws_api_gateway_method.faq_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# CORS用のメソッドレスポンス (faq)
+resource "aws_api_gateway_method_response" "faq_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faq.id
+  http_method = aws_api_gateway_method.faq_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# CORS用の統合レスポンス (faq)
+resource "aws_api_gateway_integration_response" "faq_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faq.id
+  http_method = aws_api_gateway_method.faq_options.http_method
+  status_code = aws_api_gateway_method_response.faq_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Authorization,Content-Type,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,Origin'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# Gateway Responses for CORS
+resource "aws_api_gateway_gateway_response" "default_4xx" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  response_type = "DEFAULT_4XX"
+  response_parameters = {
+    "gatewayresponse.header.Access-Control-Allow-Origin"  = "'*'"
+    "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "gatewayresponse.header.Access-Control-Allow-Headers" = "'Authorization,Content-Type,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-Requested-With,Origin'"
+  }
+}
+
+resource "aws_api_gateway_gateway_response" "default_5xx" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  response_type = "DEFAULT_5XX"
+  response_parameters = {
+    "gatewayresponse.header.Access-Control-Allow-Origin"  = "'*'"
+    "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "gatewayresponse.header.Access-Control-Allow-Headers" = "'Authorization,Content-Type,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-Requested-With,Origin'"
   }
 }
 
@@ -846,7 +923,11 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_method.faq_delete,
     aws_api_gateway_integration.faq_delete,
     aws_api_gateway_method.faq_options,
-    aws_api_gateway_integration.faq_options
+    aws_api_gateway_integration.faq_options,
+    aws_api_gateway_method_response.faqs_options,
+    aws_api_gateway_integration_response.faqs_options,
+    aws_api_gateway_method_response.faq_options,
+    aws_api_gateway_integration_response.faq_options
   ]
 
   lifecycle {
