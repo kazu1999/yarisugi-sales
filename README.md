@@ -18,12 +18,15 @@ Yarisugi Salesは、営業活動を効率化し、顧客情報を一元管理し
 - **顧客削除**: 不要な顧客データを削除
 - **ステータス管理**: 新規、商談中、成約、失注の進捗管理
 - **顧客詳細**: 独立ページでの顧客詳細表示（URL管理、ブックマーク対応）
+- **検索・フィルタリング**: 顧客データの検索とフィルタリング機能
 
-### ❓ FAQ管理システム
+### ❓ FAQ管理システム ✅ **完成**
 - **FAQ作成・編集**: 手動でのFAQ作成と編集機能
+- **FAQ削除**: 不要なFAQデータの削除
 - **カテゴリ管理**: 料金、サポート、契約、機能、その他のカテゴリ別整理
-- **AI自動生成**: AIを活用したFAQ自動生成機能
-- **ファイルアップロード**: ファイルからFAQを自動生成
+- **全オリジン対応**: 全ドメインからのアクセスを許可（CORS設定）
+- **認証付きAPI**: セキュアなFAQ管理API
+- **DynamoDB統合**: 高速なFAQデータの保存・取得
 
 ### 🧠 ナレッジベース機能
 - **ナレッジ検索**: 蓄積されたナレッジの検索機能
@@ -42,7 +45,7 @@ Yarisugi Salesは、営業活動を効率化し、顧客情報を一元管理し
 - **履歴管理**: 顧客とのコミュニケーション履歴管理
 
 ### 🤖 AI支援機能
-- **FAQ自動生成**: AIによるFAQ自動生成
+- **FAQ自動生成**: AIによるFAQ自動生成（開発中）
 - **内容分析**: ファイル内容の自動分析
 - **営業支援**: 営業活動を支援するAIアシスタント
 
@@ -67,6 +70,7 @@ Yarisugi Salesは、営業活動を効率化し、顧客情報を一元管理し
 - **API**: Amazon API Gateway
 - **サーバーレス**: AWS Lambda（Python 3.11）
 - **インフラ**: Terraform
+- **CDN**: CloudFront（CORS対応）
 
 ## 🚀 セットアップ
 
@@ -131,7 +135,8 @@ yarisugi-sales/
 │   ├── contexts/          # React Context
 │   │   └── AuthContext.jsx # 認証状態管理
 │   ├── hooks/             # カスタムフック
-│   │   └── useCustomerManagement.js # 顧客管理フック
+│   │   ├── useCustomerManagement.js # 顧客管理フック
+│   │   └── useFaqManagement.js # FAQ管理フック
 │   ├── utils/             # ユーティリティ
 │   │   ├── awsConfig.js   # AWS設定
 │   │   ├── awsApiClient.js # APIクライアント
@@ -146,7 +151,7 @@ yarisugi-sales/
 │   │   │   ├── __init__.py
 │   │   │   └── dynamodb.py # DynamoDB操作
 │   │   ├── customers.py   # 顧客管理API
-│   │   └── ...
+│   │   └── faqs.py        # FAQ管理API
 │   ├── terraform/         # インフラ設定
 │   │   ├── main.tf        # メイン設定
 │   │   └── variables.tf   # 変数定義
@@ -186,9 +191,14 @@ yarisugi-sales/
 - `PUT /customers/{id}` - 顧客更新（認証付き）
 - `DELETE /customers/{id}` - 顧客削除（認証付き）
 
+#### FAQ管理API ✅ **完成**
+- `GET /faqs` - FAQ一覧取得（認証付き）
+- `POST /faqs` - FAQ作成（認証付き）
+- `GET /faqs/{id}` - FAQ詳細取得（認証付き）
+- `PUT /faqs/{id}` - FAQ更新（認証付き）
+- `DELETE /faqs/{id}` - FAQ削除（認証付き）
+
 #### その他のAPI（開発中）
-- `GET /faqs` - FAQ一覧取得
-- `POST /faqs` - FAQ作成
 - `GET /knowledge` - ナレッジ一覧取得
 - `POST /knowledge` - ナレッジ作成
 
@@ -211,6 +221,21 @@ yarisugi-sales/
   "status": "新規",
   "createdAt": "2025-08-13T00:00:00.000000",
   "updatedAt": "2025-08-13T00:00:00.000000"
+}
+```
+
+#### FAQデータ
+```json
+{
+  "id": "faq_20250813_123456_789",
+  "userId": "cognito-user-id",
+  "question": "料金プランについて教えてください",
+  "answer": "当社の料金プランは以下の通りです...",
+  "category": "料金",
+  "tags": ["料金", "プラン", "月額"],
+  "isPublic": true,
+  "createdAt": "2025-08-13T12:34:56.789Z",
+  "updatedAt": "2025-08-13T12:34:56.789Z"
 }
 ```
 
@@ -243,7 +268,15 @@ yarisugi-sales/
 
 ### よくある問題と解決方法
 
-#### 1. AWS Amplifyのインポートエラー
+#### 1. CORSエラー
+**エラー**: `Access to fetch at '...' from origin '...' has been blocked by CORS policy`
+
+**解決方法**: 
+- ブラウザのハードリフレッシュ（Ctrl+Shift+R / Cmd+Shift+R）を実行
+- API Gatewayのキャッシュがクリアされるまで数分待機
+- 全オリジン許可（`*`）のCORS設定が適用されていることを確認
+
+#### 2. AWS Amplifyのインポートエラー
 **エラー**: `The requested module does not provide an export named 'Auth'`
 
 **解決方法**: AWS Amplify v6ではインポート方法が変更されています
@@ -255,14 +288,14 @@ import { Auth } from 'aws-amplify';
 import { signUp, signIn, signOut } from 'aws-amplify/auth';
 ```
 
-#### 2. Cognito認証フローエラー
+#### 3. Cognito認証フローエラー
 **エラー**: `USER_SRP_AUTH is not enabled for the client`
 
 **解決方法**: AWS Cognitoコンソールで認証フローを有効にする
 - AWS Cognito → User Pools → App client → Authentication flows
 - `USER_SRP_AUTH`を有効にする
 
-#### 3. useNavigateエラー
+#### 4. useNavigateエラー
 **エラー**: `useNavigate() may be used only in the context of a <Router> component`
 
 **解決方法**: RouterとAuthProviderの順序を修正
@@ -273,22 +306,6 @@ import { signUp, signIn, signOut } from 'aws-amplify/auth';
     {/* コンポーネント */}
   </AuthProvider>
 </Router>
-```
-
-#### 4. 画面遷移しない問題
-**問題**: ログイン成功後、メインページに遷移しない
-
-**解決方法**: 認証状態監視とナビゲーション処理を追加
-```javascript
-// AuthContext.jsx
-useEffect(() => {
-  const unsubscribe = onAuthStateChanged((user) => {
-    if (user && window.location.pathname === '/login') {
-      navigate('/');
-    }
-  });
-  return unsubscribe;
-}, [navigate]);
 ```
 
 #### 5. DynamoDB更新エラー
@@ -306,10 +323,23 @@ result = dynamodb_client.update_item(
 )
 ```
 
+#### 6. API Gateway統合エラー
+**エラー**: `500 Internal Server Error`（Lambdaに到達しない）
+
+**解決方法**: API Gateway統合URIの形式を確認
+```terraform
+# 正しい形式
+uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.faqs_api.arn}/invocations"
+
+# 間違った形式
+uri = aws_lambda_function.faqs_api.invoke_arn
+```
+
 ### デバッグ方法
 1. **ブラウザの開発者ツール**: F12でコンソールを確認
 2. **AWS CloudWatch**: Lambda関数のログを確認
 3. **Cognitoコンソール**: ユーザー認証状態を確認
+4. **API Gateway**: メソッド統合とレスポンスを確認
 
 ## 🔧 APIテストとSwagger Editor
 
@@ -323,6 +353,11 @@ result = dynamodb_client.update_item(
 - **GET /customers/{id}**: 顧客詳細取得
 - **PUT /customers/{id}**: 顧客更新
 - **DELETE /customers/{id}**: 顧客削除
+- **GET /faqs**: FAQ一覧取得
+- **POST /faqs**: FAQ作成
+- **GET /faqs/{id}**: FAQ詳細取得
+- **PUT /faqs/{id}**: FAQ更新
+- **DELETE /faqs/{id}**: FAQ削除
 
 ### Swagger Editorでのテスト方法
 
@@ -383,20 +418,24 @@ aws cognito-idp admin-initiate-auth \
 }
 ```
 
-**GET /customers（顧客一覧取得）**
-```
-Query Parameters:
-- limit: 20
-- offset: 0
-- status: 新規（オプション）
+**POST /faqs（FAQ作成）**
+```json
+{
+  "question": "料金プランについて教えてください",
+  "answer": "当社の料金プランは以下の通りです...",
+  "category": "料金",
+  "tags": ["料金", "プラン"],
+  "isPublic": true
+}
 ```
 
 ### CORS設定
 
 APIは以下のドメインからのアクセスを許可しています：
 - `http://localhost:5173`（開発環境）
+- `http://localhost:5174`（開発環境）
 - `https://editor.swagger.io`（Swagger Editor）
-- `*`（すべてのドメイン - 開発用）
+- `*`（すべてのドメイン - 全オリジン許可）
 
 ### エラーハンドリング
 
@@ -413,6 +452,16 @@ APIは以下のドメインからのアクセスを許可しています：
 - 解決方法: AWS CloudWatchでログを確認
 
 ## 📝 最近の更新
+
+### v2.4.0 - FAQ管理システム完成 ✅
+- ✅ **FAQ一覧表示**: 認証されたユーザーのFAQデータを表示
+- ✅ **FAQ新規作成**: フォームから新しいFAQを追加
+- ✅ **FAQ編集**: 既存FAQの情報を更新・編集
+- ✅ **FAQ削除**: 不要なFAQデータを削除
+- ✅ **カテゴリ管理**: 料金、サポート、契約、機能、その他のカテゴリ別整理
+- ✅ **全オリジン対応**: 全ドメインからのアクセスを許可（CORS設定）
+- ✅ **API Gateway統合修正**: 正しいURI形式でのLambda統合
+- ✅ **CORS問題解決**: CloudFrontキャッシュとVaryヘッダーの適切な設定
 
 ### v2.3.0 - 顧客管理システム完成 ✅
 - ✅ **顧客一覧表示**: 認証されたユーザーの顧客データを表示
@@ -460,6 +509,7 @@ APIは以下のドメインからのアクセスを許可しています：
 - **DynamoDB**: 暗号化されたデータ保存
 - **API Gateway**: セキュアなAPI通信
 - **JWT認証**: 安全なトークンベース認証
+- **CORS設定**: 適切なオリジン制御
 
 ## 💰 コスト
 
@@ -468,6 +518,7 @@ APIは以下のドメインからのアクセスを許可しています：
 - **Lambda**: 従量課金（100万リクエストまで無料）
 - **API Gateway**: 従量課金（100万リクエストまで無料）
 - **Cognito**: 従量課金（5万ユーザーまで無料）
+- **CloudFront**: 従量課金（転送量に応じて）
 
 ## 🤝 貢献
 
@@ -489,4 +540,19 @@ APIは以下のドメインからのアクセスを許可しています：
 
 **Yarisugi Sales** - 営業活動を効率化し、顧客との関係を深めるための総合営業支援システム
 
-**最新バージョン**: v2.3.0 - 顧客管理システム完成 🎉
+**最新バージョン**: v2.4.0 - FAQ管理システム完成 🎉
+
+**実装済み機能**:
+- ✅ 認証システム（AWS Cognito）
+- ✅ 顧客管理システム（CRUD + 検索・フィルタリング）
+- ✅ FAQ管理システム（CRUD + カテゴリ管理）
+- ✅ 全オリジン対応（CORS設定）
+- ✅ API Gateway統合
+- ✅ DynamoDB統合
+- ✅ Terraformインフラ管理
+
+**次期開発予定**:
+- 🤖 AI自動生成機能
+- 🧠 ナレッジベース機能
+- 📈 営業プロセス管理
+- 💬 コミュニケーション機能
