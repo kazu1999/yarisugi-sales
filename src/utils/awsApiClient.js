@@ -121,6 +121,10 @@ class AwsApiClient {
     return this.request('/faqs');
   }
 
+  async getFaq(faqId) {
+    return this.request(`/faqs/${faqId}`);
+  }
+
   async createFaq(faqData) {
     return this.request('/faqs', {
       method: 'POST',

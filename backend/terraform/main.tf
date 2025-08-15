@@ -17,6 +17,11 @@ provider "aws" {
 
 # DynamoDBテーブル
 
+# ローカル変数
+locals {
+  faqs_integration_uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.faqs_api.arn}/invocations"
+}
+
 # ユーザーテーブル
 resource "aws_dynamodb_table" "users" {
   name           = "${var.project_name}-users-${var.environment}"
@@ -400,7 +405,7 @@ resource "aws_api_gateway_method" "customers_options" {
   authorization = "NONE"
 }
 
-# 顧客詳細リソース
+# 顧客詳細APIリソース
 resource "aws_api_gateway_resource" "customer" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.customers.id
@@ -425,6 +430,15 @@ resource "aws_api_gateway_method" "customer_put" {
   authorizer_id = aws_api_gateway_authorizer.cognito.id
 }
 
+# 顧客削除 (DELETE /customers/{id})
+resource "aws_api_gateway_method" "customer_delete" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.customer.id
+  http_method   = "DELETE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
 # CORS用のOPTIONSメソッド (customer)
 resource "aws_api_gateway_method" "customer_options" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
@@ -433,13 +447,79 @@ resource "aws_api_gateway_method" "customer_options" {
   authorization = "NONE"
 }
 
-# 顧客削除 (DELETE /customers/{id})
-resource "aws_api_gateway_method" "customer_delete" {
+# FAQ管理APIリソース
+resource "aws_api_gateway_resource" "faqs" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "faqs"
+}
+
+# FAQ一覧取得 (GET /faqs) - 認証付き
+resource "aws_api_gateway_method" "faqs_get" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
-  resource_id   = aws_api_gateway_resource.customer.id
+  resource_id   = aws_api_gateway_resource.faqs.id
+  http_method   = "GET"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# FAQ作成 (POST /faqs)
+resource "aws_api_gateway_method" "faqs_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.faqs.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# CORS用のOPTIONSメソッド (faqs)
+resource "aws_api_gateway_method" "faqs_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.faqs.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# FAQ詳細APIリソース
+resource "aws_api_gateway_resource" "faq" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.faqs.id
+  path_part   = "{id}"
+}
+
+# FAQ詳細取得 (GET /faqs/{id})
+resource "aws_api_gateway_method" "faq_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.faq.id
+  http_method   = "GET"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# FAQ更新 (PUT /faqs/{id})
+resource "aws_api_gateway_method" "faq_put" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.faq.id
+  http_method   = "PUT"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# FAQ削除 (DELETE /faqs/{id})
+resource "aws_api_gateway_method" "faq_delete" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.faq.id
   http_method   = "DELETE"
   authorization = "COGNITO_USER_POOLS"
   authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# CORS用のOPTIONSメソッド (faq)
+resource "aws_api_gateway_method" "faq_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.faq.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
 }
 
 # Lambda関数との統合
@@ -511,6 +591,123 @@ resource "aws_api_gateway_integration" "customer_options" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   resource_id = aws_api_gateway_resource.customer.id
   http_method = aws_api_gateway_method.customer_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# FAQ Lambda関数
+resource "aws_lambda_function" "faqs_api" {
+  filename         = "lambda_functions/faqs_lambda.zip"
+  function_name    = "yarisugi-faqs-api"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "faqs.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 30
+
+  environment {
+    variables = {
+      FAQS_TABLE = aws_dynamodb_table.faqs.name
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# FAQ Lambda関数の権限
+resource "aws_lambda_permission" "faqs_api" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.faqs_api.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*/*"
+}
+
+# FAQ API Gateway統合
+resource "aws_api_gateway_integration" "faqs_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faqs.id
+  http_method = aws_api_gateway_method.faqs_get.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = local.faqs_integration_uri
+
+  depends_on = [aws_lambda_permission.faqs_api]
+}
+
+resource "aws_api_gateway_integration" "faqs_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faqs.id
+  http_method = aws_api_gateway_method.faqs_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = local.faqs_integration_uri
+
+  depends_on = [aws_lambda_permission.faqs_api]
+}
+
+resource "aws_api_gateway_integration" "faq_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faq.id
+  http_method = aws_api_gateway_method.faq_get.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = local.faqs_integration_uri
+
+  depends_on = [aws_lambda_permission.faqs_api]
+}
+
+resource "aws_api_gateway_integration" "faq_put" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faq.id
+  http_method = aws_api_gateway_method.faq_put.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = local.faqs_integration_uri
+
+  depends_on = [aws_lambda_permission.faqs_api]
+}
+
+resource "aws_api_gateway_integration" "faq_delete" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faq.id
+  http_method = aws_api_gateway_method.faq_delete.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = local.faqs_integration_uri
+
+  depends_on = [aws_lambda_permission.faqs_api]
+}
+
+# CORS用の統合 (faqs)
+resource "aws_api_gateway_integration" "faqs_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faqs.id
+  http_method = aws_api_gateway_method.faqs_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# CORS用の統合 (faq)
+resource "aws_api_gateway_integration" "faq_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faq.id
+  http_method = aws_api_gateway_method.faq_options.http_method
 
   type = "MOCK"
 
@@ -635,7 +832,21 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_method_response.customers_options,
     aws_api_gateway_integration_response.customers_options,
     aws_api_gateway_method_response.customer_options,
-    aws_api_gateway_integration_response.customer_options
+    aws_api_gateway_integration_response.customer_options,
+    aws_api_gateway_method.faqs_get,
+    aws_api_gateway_integration.faqs_get,
+    aws_api_gateway_method.faqs_post,
+    aws_api_gateway_integration.faqs_post,
+    aws_api_gateway_method.faqs_options,
+    aws_api_gateway_integration.faqs_options,
+    aws_api_gateway_method.faq_get,
+    aws_api_gateway_integration.faq_get,
+    aws_api_gateway_method.faq_put,
+    aws_api_gateway_integration.faq_put,
+    aws_api_gateway_method.faq_delete,
+    aws_api_gateway_integration.faq_delete,
+    aws_api_gateway_method.faq_options,
+    aws_api_gateway_integration.faq_options
   ]
 
   lifecycle {
