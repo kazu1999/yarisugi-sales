@@ -15,6 +15,8 @@ import {
 
 // 新しいコンポーネントとカスタムフックのインポート
 import { useCustomerManagement } from './hooks/useCustomerManagement';
+import { useFaqManagement } from './hooks/useFaqManagement';
+import { snsStatusOptions } from './utils/constants';
 // import CustomerDetail from './components/customer/CustomerDetail';
 
 const YarisugiDashboard = () => {
@@ -24,8 +26,8 @@ const YarisugiDashboard = () => {
   // 顧客管理フックを使用
   const {
     customers,
-    loading,
-    error,
+    loading: customersLoading,
+    error: customersError,
     customerForm: hookCustomerForm,
     setCustomerForm: setHookCustomerForm,
     fetchCustomers,
@@ -49,33 +51,53 @@ const YarisugiDashboard = () => {
     industryOptions,
     customerStatuses
   } = useCustomerManagement();
+
+  // FAQ管理フックを使用
+  const {
+    faqs,
+    loading: faqsLoading,
+    error: faqsError,
+    searchQuery: faqSearchQuery,
+    setSearchQuery: setFaqSearchQuery,
+    selectedCategory,
+    setSelectedCategory,
+    showFilters: showFaqFilters,
+    setShowFilters: setShowFaqFilters,
+    faqForm,
+    setFaqForm,
+    aiGeneratedFaqs,
+    isGenerating,
+    uploadedContent,
+    setUploadedContent,
+    uploadedFiles,
+    setUploadedFiles,
+    showFaqForm,
+    setShowFaqForm,
+    editingFaq,
+    setEditingFaq,
+    showAiGenerator,
+    setShowAiGenerator,
+    filteredFaqs,
+    categoryCounts,
+    categories,
+    fetchFaqs,
+    createFaq,
+    updateFaq,
+    deleteFaq,
+    fetchFaq,
+    generateFaqsFromContent,
+    saveGeneratedFaq,
+    updateGeneratedFaq,
+    removeGeneratedFaq,
+    resetFaqForm
+  } = useFaqManagement();
   
   const [activePage, setActivePage] = useState('top');
   const [showApproval, setShowApproval] = useState(false);
   const [customersPerPage, setCustomersPerPage] = useState(50);
-  const [showAddFaq, setShowAddFaq] = useState(false);
   const [showAddDatabase, setShowAddDatabase] = useState(false);
   const [showAiAssist, setShowAiAssist] = useState(false);
-  const [newFaq, setNewFaq] = useState({
-    question: '',
-    answer: '',
-    category: '料金'
-  });
-  const [databaseText, setDatabaseText] = useState('');
-  const [databaseFiles, setDatabaseFiles] = useState([]);
-  const [aiFiles, setAiFiles] = useState([]);
-  const [aiGeneratedFaqs, setAiGeneratedFaqs] = useState([]);
-  const [customCategory, setCustomCategory] = useState('');
-  const [isCustomCategory, setIsCustomCategory] = useState(false);
-  const [faqCategories, setFaqCategories] = useState(['全て', '料金', 'サポート', '契約', '機能', 'その他']);
-  // FAQBuilder関連の状態
-  const [uploadedContent, setUploadedContent] = useState('');
-  const [generatedFaqs, setGeneratedFaqs] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [searchTerm, setSearchTerm] = useState('');
   const [showDuplicateWarning, setShowDuplicateWarning] = useState({});
-  const [isGenerating, setIsGenerating] = useState(false);
   
   // 顧客管理システムの状態
   const [activeTab, setActiveTab] = useState('概要');
@@ -351,136 +373,6 @@ const YarisugiDashboard = () => {
     setShowApproval(true);
   };
 
-  const handleAddFaq = () => {
-    const finalCategory = isCustomCategory && customCategory.trim() 
-      ? customCategory.trim() 
-      : newFaq.category;
-    
-    if (isCustomCategory && customCategory.trim() && !faqCategories.includes(customCategory.trim())) {
-      setFaqCategories(prev => [...prev, customCategory.trim()]);
-    }
-
-    if (newFaq.question.trim() && newFaq.answer.trim()) {
-      alert(`FAQ追加完了！\n質問: ${newFaq.question}\n回答: ${newFaq.answer}\nカテゴリ: ${finalCategory}`);
-      setNewFaq({ question: '', answer: '', category: '料金' });
-      setCustomCategory('');
-      setIsCustomCategory(false);
-      setShowAddFaq(false);
-    }
-  };
-
-  const handleAiFileUpload = (event) => {
-    const files = Array.from(event.target.files);
-    const newFiles = files.map((file, index) => ({
-      id: Date.now() + index,
-      name: file.name,
-      type: file.name.split('.').pop(),
-      size: `${(file.size / 1024 / 1024).toFixed(1)}MB`,
-      processed: false
-    }));
-    
-    setAiFiles(prev => [...prev, ...newFiles]);
-    
-    setTimeout(() => {
-      const generatedFaqs = [];
-      files.forEach((file, fileIndex) => {
-        const faqTemplates = [
-          {
-            category: '料金・価格',
-            question: `基本料金はいくらですか？`,
-            answer: `基本料金は月額50,000円からとなっております。ご利用規模やオプション機能により価格が変動いたします。詳細なお見積りについてはお問い合わせください。`
-          },
-          {
-            category: '料金・価格',
-            question: `初期費用は必要ですか？`,
-            answer: `初期導入費用として100,000円を頂戴しております。これには初回設定、データ移行、操作研修が含まれます。`
-          },
-          {
-            category: 'サービス内容・機能',
-            question: `どのような機能が利用できますか？`,
-            answer: `顧客管理、売上分析、レポート作成、自動化機能、API連携など、豊富な機能をご利用いただけます。詳細な機能一覧は資料をご確認ください。`
-          },
-          {
-            category: 'サービス内容・機能',
-            question: `カスタマイズは可能ですか？`,
-            answer: `はい、お客様のご要望に応じてカスタマイズ対応が可能です。追加開発費用については別途お見積りいたします。`
-          },
-          {
-            category: '導入・設定',
-            question: `導入までどのくらいの期間が必要ですか？`,
-            answer: `標準的な導入期間は2-4週間程度です。お客様の環境やデータ量により前後する場合があります。`
-          }
-        ];
-
-        const numFaqs = Math.floor(Math.random() * 5) + 8;
-        const selectedFaqs = faqTemplates
-          .sort(() => 0.5 - Math.random())
-          .slice(0, numFaqs)
-          .map((template, index) => ({
-            id: Date.now() + fileIndex * 100 + index,
-            category: template.category,
-            question: template.question,
-            answer: template.answer,
-            source: file.name,
-            editable: true
-          }));
-
-        generatedFaqs.push(...selectedFaqs);
-      });
-      
-      setAiGeneratedFaqs(generatedFaqs);
-      
-      const newCategories = [...new Set(generatedFaqs.map(faq => faq.category))];
-      newCategories.forEach(category => {
-        if (!faqCategories.includes(category)) {
-          setFaqCategories(prev => [...prev, category]);
-        }
-      });
-      
-      setAiFiles(prev => 
-        prev.map(f => newFiles.find(nf => nf.id === f.id) ? {...f, processed: true} : f)
-      );
-    }, 3000);
-  };
-
-  const updateAiFaq = (id, field, value) => {
-    setAiGeneratedFaqs(prev => 
-      prev.map(faq => 
-        faq.id === id ? { ...faq, [field]: value } : faq
-      )
-    );
-  };
-
-  const addAiFaq = (faq) => {
-    alert(`FAQ追加完了！\nカテゴリ: ${faq.category}\n質問: ${faq.question}`);
-    setAiGeneratedFaqs(prev => prev.filter(f => f.id !== faq.id));
-  };
-
-  const removeAiFaq = (id) => {
-    setAiGeneratedFaqs(prev => prev.filter(faq => faq.id !== id));
-  };
-
-  const handleDatabaseFileUpload = (event) => {
-    const files = Array.from(event.target.files);
-    const newFiles = files.map((file, index) => ({
-      id: Date.now() + index,
-      name: file.name,
-      type: file.name.split('.').pop(),
-      date: new Date().toISOString().split('T')[0],
-      size: `${(file.size / 1024 / 1024).toFixed(1)}MB`,
-      processed: false
-    }));
-    
-    setDatabaseFiles(prev => [...prev, ...newFiles]);
-    
-    setTimeout(() => {
-      setDatabaseFiles(prev => 
-        prev.map(f => newFiles.find(nf => nf.id === f.id) ? {...f, processed: true} : f)
-      );
-      alert(`${files.length}個のファイルからFAQを自動生成しました！`);
-    }, 2000);
-  };
-
   const handleDatabaseTextSubmit = () => {
     if (databaseText.trim()) {
       alert(`テキストからFAQを自動生成しました！\n入力文字数: ${databaseText.length}文字`);
@@ -538,64 +430,6 @@ const YarisugiDashboard = () => {
     if (text.trim()) {
       setUploadedContent(text);
     }
-  };
-
-  const updateGeneratedFaq = (id, field, value) => {
-    setGeneratedFaqs(prev =>
-      prev.map(faq => faq.id === id ? { ...faq, [field]: value, status: 'edited' } : faq)
-    );
-  };
-
-  const deleteGeneratedFaq = (id) => {
-    setGeneratedFaqs(prev => prev.filter(faq => faq.id !== id));
-  };
-
-  const addNewGeneratedFaq = () => {
-    const newFaq = {
-      id: Date.now(),
-      category: selectedCategory === 'all' ? '新規カテゴリ' : selectedCategory,
-      question: '',
-      answer: '',
-      status: 'new',
-      similarity: 0
-    };
-    setGeneratedFaqs(prev => [newFaq, ...prev]);
-  };
-
-  const saveGeneratedFaq = (faq) => {
-    if (faq.similarity > 80) {
-      setShowDuplicateWarning({ ...showDuplicateWarning, [faq.id]: true });
-      return;
-    }
-        
-    alert(`FAQ登録完了:\nカテゴリ: ${faq.category}\n質問: ${faq.question}`);
-    setGeneratedFaqs(prev => prev.map(f =>
-      f.id === faq.id ? { ...f, status: 'saved' } : f
-    ));
-  };
-
-  const saveAllGeneratedFaqs = () => {
-    const newFaqs = generatedFaqs.filter(faq => faq.status !== 'saved' && faq.similarity < 80);
-    alert(`${newFaqs.length}件のFAQを一括登録しました`);
-    setGeneratedFaqs(prev => prev.map(faq => ({ ...faq, status: 'saved' })));
-  };
-
-  const filteredFaqs = generatedFaqs.filter(faq => {
-    const matchesCategory = selectedCategory === 'all' || faq.category === selectedCategory;
-    const matchesSearch = faq.question.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         faq.answer.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
-
-  // uploadedContentが変更されたときにFAQ生成を実行
-  React.useEffect(() => {
-    if (uploadedContent) {
-      generateComprehensiveFAQs();
-    }
-  }, [uploadedContent]);
-
-  const showCustomerDetails = (customer) => {
-    navigate(`/customer/${customer.id}`);
   };
 
   const handleCheckout = async () => {
@@ -1221,490 +1055,250 @@ const YarisugiDashboard = () => {
             <div>
               <div className="mb-6">
                 <h1 className="text-2xl font-bold text-gray-900">FAQ管理システム</h1>
-                <p className="text-gray-600 mt-2">FAQ追加とデータベース作成のモーダル機能</p>
+                <p className="text-gray-600 mt-2">よくある質問の管理とAI自動生成</p>
               </div>
 
-              <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-                <div className="flex gap-4 mb-8">
+              {/* デバッグ情報 */}
+              <div className="mb-4 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                <p>Debug: faqs.length = {faqs.length}</p>
+                <p>Debug: filteredFaqs.length = {filteredFaqs.length}</p>
+                <p>Debug: loading = {faqsLoading.toString()}</p>
+                <p>Debug: error = {faqsError || 'なし'}</p>
                   <button 
-                    onClick={() => setShowAddFaq(true)}
-                    className="bg-indigo-500 text-white px-6 py-3 rounded-lg hover:bg-indigo-600 transition-colors"
-                  >
-                    + FAQ追加
-                  </button>
-                  <button 
-                    onClick={() => setShowAddDatabase(true)}
-                    className="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 transition-colors"
-                  >
-                    📚 データベース作成
-                  </button>
-                  <button 
-                    onClick={() => setShowAiAssist(true)}
-                    className="bg-purple-500 text-white px-6 py-3 rounded-lg hover:bg-purple-600 transition-colors flex items-center gap-2"
-                  >
-                    ✨ AIアシスト FAQ作成
+                  onClick={() => {
+                    console.log('🔄 手動でFAQデータ再取得');
+                    fetchFaqs();
+                  }}
+                  className="mt-2 px-2 py-1 bg-blue-500 text-white rounded text-xs"
+                >
+                  FAQデータ再取得
                   </button>
                 </div>
 
-                {/* 既存FAQ表示エリア */}
-                <div className="space-y-4">
-                  <h2 className="text-xl font-semibold">既存のFAQ</h2>
-                  <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">料金</span>
-                      <span className="px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-700">手動追加</span>
-                    </div>
-                    <h3 className="font-semibold mb-2">Q: 基本プランの料金はいくらですか？</h3>
-                    <p className="text-gray-700 mb-2">A: 基本プランは月額50,000円で10ユーザーまでご利用いただけます。</p>
-                    <div className="text-sm text-gray-500">使用回数: 15回</div>
-                  </div>
-                </div>
-              </div>
+              {/* エラーメッセージ */}
+              {faqsError && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-red-800">{faqsError}</p>
             </div>
           )}
 
-          {/* 顧客詳細ダッシュボード */}
-          {/* {showCustomerDetail && selectedCustomer && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-                <div className="p-6 border-b">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h3 className="text-xl font-bold">{selectedCustomer.name}</h3>
-                      <p className="text-gray-600">{selectedCustomer.contact} • {selectedCustomer.industry}</p>
-                    </div>
-                    <button 
-                      onClick={() => setShowCustomerDetail(false)}
-                      className="text-gray-500 hover:text-gray-700 text-2xl"
-                    >
-                      ×
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <h4 className="font-semibold mb-3">基本情報</h4>
-                      <div className="space-y-2">
-                        <div>
-                          <span className="text-gray-600">会社名:</span>
-                          <span className="ml-2">{selectedCustomer.name}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600">担当者:</span>
-                          <span className="ml-2">{selectedCustomer.contact}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600">メール:</span>
-                          <span className="ml-2">{selectedCustomer.email}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600">電話番号:</span>
-                          <span className="ml-2">{selectedCustomer.phone}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600">業種:</span>
-                          <span className="ml-2">{selectedCustomer.industry}</span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <h4 className="font-semibold mb-3">営業情報</h4>
-                      <div className="space-y-2">
-                        <div>
-                          <span className="text-gray-600">ステータス:</span>
-                          <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">商談中</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600">担当営業:</span>
-                          <span className="ml-2">山田太郎</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-600">登録日:</span>
-                          <span className="ml-2">2024-01-15</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-6 pt-6 border-t">
-                    <h4 className="font-semibold mb-3">アクション</h4>
-                    <div className="flex gap-3">
-                      <Button variant="primary">メール送信</Button>
-                      <Button variant="secondary">LINE送信</Button>
-                      <Button variant="secondary">商談記録</Button>
-                      <Button variant="secondary">見積もり作成</Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )} */}
-
-          {/* FAQ追加モーダル */}
-          {showAddFaq && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-                <div className="p-6 border-b">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-xl font-bold">FAQ追加</h3>
-                    <button 
-                      onClick={() => setShowAddFaq(false)}
-                      className="text-gray-500 hover:text-gray-700 text-2xl"
-                    >
-                      ×
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="p-6 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">カテゴリ</label>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          id="existing-category"
-                          name="category-type"
-                          checked={!isCustomCategory}
-                          onChange={() => setIsCustomCategory(false)}
-                          className="text-indigo-600"
-                        />
-                        <label htmlFor="existing-category" className="text-sm">既存カテゴリから選択</label>
-                      </div>
-                      {!isCustomCategory && (
-                        <select 
-                          value={newFaq.category}
-                          onChange={(e) => setNewFaq(prev => ({...prev, category: e.target.value}))}
-                          className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        >
-                          {faqCategories.slice(1).map(category => (
-                            <option key={category} value={category}>{category}</option>
-                          ))}
-                        </select>
-                      )}
-                      
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          id="custom-category"
-                          name="category-type"
-                          checked={isCustomCategory}
-                          onChange={() => setIsCustomCategory(true)}
-                          className="text-indigo-600"
-                        />
-                        <label htmlFor="custom-category" className="text-sm">新しいカテゴリを作成</label>
-                      </div>
-                      {isCustomCategory && (
+              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                {/* 検索・フィルターバー */}
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex flex-col gap-4">
+                    {/* 検索バー */}
+                    <div className="flex gap-3 items-center">
+                      <div className="flex-1 relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                         <input
                           type="text"
-                          value={customCategory}
-                          onChange={(e) => setCustomCategory(e.target.value)}
-                          placeholder="新しいカテゴリ名を入力"
-                          className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                          placeholder="FAQ内容で検索..."
+                          value={faqSearchQuery}
+                          onChange={(e) => setFaqSearchQuery(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
-                      )}
-                    </div>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant={showFaqFilters ? "primary" : "secondary"}
+                        onClick={() => setShowFaqFilters(!showFaqFilters)}
+                        className="flex items-center gap-2"
+                      >
+                        <Filter className="w-4 h-4" />
+                        カテゴリ
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        onClick={() => setShowFaqForm(true)}
+                        className="flex items-center gap-2"
+                      >
+                        <Plus className="w-4 h-4" />
+                        FAQ追加
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => setShowAiGenerator(true)}
+                        className="flex items-center gap-2"
+                      >
+                        <Brain className="w-4 h-4" />
+                        AI生成
+                      </Button>
                   </div>
                   
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">質問</label>
-                    <input 
-                      type="text"
-                      value={newFaq.question}
-                      onChange={(e) => setNewFaq(prev => ({...prev, question: e.target.value}))}
-                      placeholder="よくある質問を入力してください"
-                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">回答</label>
-                    <textarea 
-                      value={newFaq.answer}
-                      onChange={(e) => setNewFaq(prev => ({...prev, answer: e.target.value}))}
-                      rows="6"
-                      placeholder="回答を入力してください"
-                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                    />
-                  </div>
-                  
-                  <div className="flex gap-4 pt-4">
+                    {/* カテゴリフィルター */}
+                    {showFaqFilters && (
+                      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                        <div className="flex flex-wrap gap-2">
+                          {categories.map(category => (
                     <button 
-                      onClick={handleAddFaq}
-                      className="bg-indigo-500 text-white px-6 py-2 rounded-lg hover:bg-indigo-600 transition-colors"
-                    >
-                      追加
-                    </button>
-                    <button 
-                      onClick={() => setShowAddFaq(false)}
-                      className="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-300 transition-colors"
-                    >
-                      キャンセル
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* データベース作成モーダル */}
-          {showAddDatabase && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-                <div className="p-6 border-b">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-xl font-bold">データベース作成 - FAQ自動生成</h3>
-                    <button 
-                      onClick={() => setShowAddDatabase(false)}
-                      className="text-gray-500 hover:text-gray-700 text-2xl"
-                    >
-                      ×
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="p-6">
-                  {!uploadedContent ? (
-                    <div>
-                      <h1 className="text-3xl font-bold mb-8 text-center">FAQ自動生成システム</h1>
-                      
-                      <div className="grid md:grid-cols-2 gap-8">
-                        {/* ファイルアップロード */}
-                        <div className="bg-white p-8 rounded-lg shadow-lg border-2 border-dashed border-blue-300 hover:border-blue-500 transition-colors">
-                          <div className="text-center">
-                            <div className="text-6xl mb-4">📁</div>
-                            <h2 className="text-xl font-bold mb-2">ファイルをアップロード</h2>
-                            <p className="text-gray-600 mb-4">PDF, Word, Excel, PowerPoint対応</p>
-                            <input
-                              type="file"
-                              onChange={handleFaqFileUpload}
-                              className="hidden"
-                              id="faq-file-upload"
-                              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-                            />
-                            <label
-                              htmlFor="faq-file-upload"
-                              className="bg-blue-500 text-white px-6 py-3 rounded-lg cursor-pointer hover:bg-blue-600 transition-colors inline-block"
-                            >
-                              ファイルを選択
-                            </label>
-                          </div>
-                        </div>
-
-                        {/* テキスト入力 */}
-                        <div className="bg-white p-8 rounded-lg shadow-lg border-2 border-dashed border-green-300 hover:border-green-500 transition-colors">
-                          <div className="text-center">
-                            <div className="text-6xl mb-4">📝</div>
-                            <h2 className="text-xl font-bold mb-2">テキストを入力</h2>
-                            <p className="text-gray-600 mb-4">サービス情報を直接入力</p>
-                            <button
-                              onClick={() => {
-                                const text = prompt('サービス情報を入力してください');
-                                if (text) handleFaqTextInput(text);
-                              }}
-                              className="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 transition-colors"
-                            >
-                              テキスト入力を開始
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="flex justify-between items-center mb-6">
-                        <div>
-                          <h1 className="text-2xl font-bold">FAQ編集・登録画面</h1>
-                          <p className="text-gray-600 mt-1">アップロードされた内容: {uploadedContent}</p>
-                        </div>
-                        <button
-                          onClick={() => setUploadedContent('')}
-                          className="text-gray-500 hover:text-gray-700"
-                        >
-                          ← 戻る
-                        </button>
-                      </div>
-
-                      {/* コントロールバー */}
-                      <div className="flex flex-wrap gap-4 mb-6">
-                        <select
-                          value={selectedCategory}
-                          onChange={(e) => setSelectedCategory(e.target.value)}
-                          className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="all">全カテゴリ</option>
-                          {categories.map(cat => (
-                            <option key={cat} value={cat}>{cat}</option>
-                          ))}
-                        </select>
-
-                        <input
-                          type="text"
-                          placeholder="🔍 質問・回答を検索"
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
-                          className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                        />
-
-                        <button
-                          onClick={addNewGeneratedFaq}
-                          className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
-                        >
-                          ➕ 新規FAQ追加
-                        </button>
-
-                        <button
-                          onClick={saveAllGeneratedFaqs}
-                          className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors"
-                        >
-                          💾 すべて保存 ({generatedFaqs.filter(f => f.status !== 'saved' && f.similarity < 80).length}件)
-                        </button>
-                      </div>
-
-                      {/* 統計情報 */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                        <div className="bg-blue-50 p-4 rounded-lg">
-                          <div className="text-2xl font-bold text-blue-600">{generatedFaqs.length}</div>
-                          <div className="text-sm text-gray-600">総FAQ数</div>
-                        </div>
-                        <div className="bg-green-50 p-4 rounded-lg">
-                          <div className="text-2xl font-bold text-green-600">
-                            {generatedFaqs.filter(f => f.status === 'saved').length}
-                          </div>
-                          <div className="text-sm text-gray-600">保存済み</div>
-                        </div>
-                        <div className="bg-yellow-50 p-4 rounded-lg">
-                          <div className="text-2xl font-bold text-yellow-600">
-                            {generatedFaqs.filter(f => f.status === 'edited').length}
-                          </div>
-                          <div className="text-sm text-gray-600">編集済み</div>
-                        </div>
-                        <div className="bg-red-50 p-4 rounded-lg">
-                          <div className="text-2xl font-bold text-red-600">
-                            {generatedFaqs.filter(f => f.similarity > 80).length}
-                          </div>
-                          <div className="text-sm text-gray-600">重複の可能性</div>
-                        </div>
-                      </div>
-
-                      {/* FAQ一覧 */}
-                      <div className="space-y-4">
-                        {isGenerating ? (
-                          <div className="text-center py-12">
-                            <div className="text-4xl mb-4">🤖</div>
-                            <p className="text-lg font-medium">AI分析中...</p>
-                            <p className="text-gray-600">網羅的なFAQを生成しています</p>
-                          </div>
-                        ) : (
-                          filteredFaqs.map((faq) => (
-                            <div
-                              key={faq.id}
-                              className={`border rounded-lg p-4 transition-all ${
-                                faq.status === 'saved' ? 'bg-gray-50 border-gray-300' :
-                                faq.status === 'edited' ? 'bg-yellow-50 border-yellow-300' :
-                                faq.similarity > 80 ? 'bg-red-50 border-red-300' :
-                                'bg-white border-gray-200'
+                              key={category.value}
+                              onClick={() => setSelectedCategory(category.value)}
+                              className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                                selectedCategory === category.value
+                                  ? 'bg-indigo-500 text-white'
+                                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                               }`}
                             >
-                              <div className="flex items-start gap-4">
-                                <div className="flex-1 space-y-3">
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="text"
-                                      value={faq.category}
-                                      onChange={(e) => updateGeneratedFaq(faq.id, 'category', e.target.value)}
-                                      className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium focus:ring-2 focus:ring-blue-500"
-                                      placeholder="カテゴリ"
-                                    />
-                                    {faq.status === 'edited' && (
-                                      <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">編集済</span>
-                                    )}
-                                    {faq.status === 'saved' && (
-                                      <span className="text-xs bg-green-200 text-green-800 px-2 py-1 rounded-full">保存済</span>
-                                    )}
-                                    {faq.similarity > 80 && (
-                                      <span className="text-xs bg-red-200 text-red-800 px-2 py-1 rounded-full">
-                                        類似度: {faq.similarity}% - 重複の可能性
+                              {category.label} ({categoryCounts[category.value] || 0})
+                    </button>
+                          ))}
+                  </div>
+                </div>
+                    )}
+              </div>
+            </div>
+
+                {/* 検索結果サマリー */}
+                <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
+                  <div className="flex justify-between items-center">
+                    <div className="text-sm text-gray-600">
+                      {faqSearchQuery || selectedCategory !== 'all' ? (
+                        <span>
+                          検索結果: <span className="font-semibold">{filteredFaqs.length}</span>件
+                          {faqs.length !== filteredFaqs.length && (
+                            <span className="text-gray-500">（全{faqs.length}件中）</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span>全FAQ: <span className="font-semibold">{faqs.length}</span>件</span>
+                      )}
+                    </div>
+                    {(faqSearchQuery || selectedCategory !== 'all') && (
+                    <button 
+                        onClick={() => {
+                          setFaqSearchQuery('');
+                          setSelectedCategory('all');
+                        }}
+                        className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                      >
+                        <X className="w-3 h-3" />
+                        フィルターをクリア
+                    </button>
+                    )}
+                  </div>
+                </div>
+                
+                {/* FAQ一覧 */}
+                <div className="p-6">
+                  {faqsLoading ? (
+                    <div className="p-8 text-center">
+                      <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                      <p className="mt-2 text-gray-600">FAQデータを読み込み中...</p>
+                          </div>
+                  ) : filteredFaqs.length === 0 ? (
+                    <div className="p-8 text-center">
+                      {faqs.length === 0 ? (
+                        <>
+                          <p className="text-gray-500">登録されているFAQがありません</p>
+                          <Button 
+                            size="sm" 
+                            className="mt-2"
+                            onClick={() => setShowFaqForm(true)}
+                          >
+                            最初のFAQを登録
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-gray-500">検索条件に一致するFAQが見つかりません</p>
+                          <Button 
+                            size="sm" 
+                            className="mt-2"
+                              onClick={() => {
+                              setFaqSearchQuery('');
+                              setSelectedCategory('all');
+                            }}
+                          >
+                            フィルターをクリア
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {filteredFaqs.map((faq) => (
+                        <div key={faq.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                                  {faq.category}
+                                </span>
+                                {faq.tags && faq.tags.length > 0 && (
+                                  <div className="flex gap-1">
+                                    {faq.tags.slice(0, 3).map((tag, index) => (
+                                      <span key={index} className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600">
+                                        {tag}
+                                      </span>
+                                    ))}
+                                    {faq.tags.length > 3 && (
+                                      <span className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600">
+                                        +{faq.tags.length - 3}
                                       </span>
                                     )}
-                                  </div>
-
-                                  <input
-                                    type="text"
-                                    value={faq.question}
-                                    onChange={(e) => updateGeneratedFaq(faq.id, 'question', e.target.value)}
-                                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 font-medium"
-                                    placeholder="質問を入力"
-                                  />
-
-                                  <textarea
-                                    value={faq.answer}
-                                    onChange={(e) => updateGeneratedFaq(faq.id, 'answer', e.target.value)}
-                                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 resize-vertical"
-                                    placeholder="回答を入力"
-                                    rows={3}
-                                  />
-
-                                  {showDuplicateWarning[faq.id] && (
-                                    <div className="bg-red-100 border border-red-300 p-3 rounded-lg text-sm">
-                                      <p className="font-medium text-red-800">⚠️ 重複の可能性があります</p>
-                                      <p className="text-red-700">既存のFAQと類似度が高いため、内容を確認してください。</p>
-                                      <button
+                      </div>
+                                )}
+                        </div>
+                              <h3 className="font-semibold mb-2 text-gray-900">Q: {faq.question}</h3>
+                              <p className="text-gray-700 mb-3">A: {faq.answer}</p>
+                              <div className="flex items-center gap-4 text-sm text-gray-500">
+                                <span>作成日: {faq.createdAt ? new Date(faq.createdAt).toLocaleDateString('ja-JP') : '-'}</span>
+                                {faq.updatedAt && (
+                                  <span>更新日: {new Date(faq.updatedAt).toLocaleDateString('ja-JP')}</span>
+                                )}
+                          </div>
+                        </div>
+                            <div className="flex gap-2 ml-4">
+                              <Button 
+                                size="sm" 
+                                variant="secondary"
+                                onClick={() => {
+                                  setEditingFaq(faq);
+                                  setFaqForm({
+                                    question: faq.question,
+                                    answer: faq.answer,
+                                    category: faq.category,
+                                    tags: faq.tags || [],
+                                    isPublic: faq.isPublic !== false
+                                  });
+                                  setShowFaqForm(true);
+                                }}
+                              >
+                                編集
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="danger"
                                         onClick={() => {
-                                          setShowDuplicateWarning({ ...showDuplicateWarning, [faq.id]: false });
-                                          saveGeneratedFaq({ ...faq, similarity: 0 });
-                                        }}
-                                        className="mt-2 text-red-600 underline text-sm"
-                                      >
-                                        それでも保存する
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={() => saveGeneratedFaq(faq)}
-                                    disabled={faq.status === 'saved'}
-                                    className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
-                                  >
-                                    保存
-                                  </button>
-                                  <button
-                                    onClick={() => deleteGeneratedFaq(faq.id)}
-                                    className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors"
-                                  >
-                                    削除
-                                  </button>
+                                  if (window.confirm('このFAQを削除しますか？')) {
+                                    deleteFaq(faq.id);
+                                  }
+                                }}
+                              >
+                                削除
+                              </Button>
                                 </div>
                               </div>
                             </div>
-                          ))
-                        )}
-                      </div>
+                      ))}
                     </div>
                   )}
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* AIアシストFAQ作成モーダル */}
-          {showAiAssist && (
+              {/* AI生成ダイアログ */}
+              {showAiGenerator && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-lg max-w-7xl w-full max-h-[95vh] overflow-y-auto">
-                <div className="p-6 border-b">
+                  <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                    <div className="p-6 border-b border-gray-200">
                   <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl">✨</span>
-                      <h3 className="text-xl font-bold">AIアシスト FAQ作成</h3>
-                      <span className="bg-purple-100 text-purple-700 text-xs px-2 py-1 rounded-full font-medium">おすすめ</span>
+                        <div>
+                          <h3 className="text-xl font-bold text-gray-900">FAQ AI生成システム</h3>
+                          <p className="text-gray-600 mt-1">資料をアップロードして自動的にFAQを生成します</p>
                     </div>
                     <button 
-                      onClick={() => setShowAiAssist(false)}
+                          onClick={() => setShowAiGenerator(false)}
                       className="text-gray-500 hover:text-gray-700 text-2xl"
                     >
                       ×
@@ -1850,7 +1444,7 @@ const YarisugiDashboard = () => {
 
                   <div className="flex gap-4 pt-6 border-t">
                     <button 
-                      onClick={() => setShowAiAssist(false)}
+                          onClick={() => setShowAiGenerator(false)}
                       className="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-300 transition-colors"
                     >
                       閉じる
@@ -1861,7 +1455,7 @@ const YarisugiDashboard = () => {
                           const count = aiGeneratedFaqs.length;
                           alert(`${count}件のFAQを一括追加しました！`);
                           setAiGeneratedFaqs([]);
-                          setShowAiAssist(false);
+                              setShowAiGenerator(false);
                         }}
                         className="bg-purple-500 text-white px-6 py-2 rounded-lg hover:bg-purple-600 transition-colors"
                       >
@@ -1871,6 +1465,8 @@ const YarisugiDashboard = () => {
                   </div>
                 </div>
               </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1885,8 +1481,8 @@ const YarisugiDashboard = () => {
               <div className="mb-4 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
                 <p>Debug: customers.length = {customers.length}</p>
                 <p>Debug: filteredCustomers.length = {filteredCustomers.length}</p>
-                <p>Debug: loading = {loading.toString()}</p>
-                <p>Debug: error = {error || 'なし'}</p>
+                <p>Debug: loading = {customersLoading.toString()}</p>
+                <p>Debug: error = {customersError || 'なし'}</p>
                 <p>Debug: activeFilterCount = {activeFilterCount}</p>
                 <button 
                   onClick={() => {
@@ -1900,9 +1496,9 @@ const YarisugiDashboard = () => {
               </div>
 
               {/* エラーメッセージ */}
-              {error && (
+              {customersError && (
                 <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <p className="text-red-800">{error}</p>
+                  <p className="text-red-800">{customersError}</p>
                 </div>
               )}
 
@@ -1914,8 +1510,8 @@ const YarisugiDashboard = () => {
                     <div className="flex gap-3 items-center">
                       <div className="flex-1 relative">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                        <input
-                          type="text"
+                    <input
+                      type="text"
                           placeholder="顧客名・会社名・メールで検索..."
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
@@ -2047,7 +1643,7 @@ const YarisugiDashboard = () => {
                 </div>
 
                 <div className="overflow-x-auto">
-                  {loading ? (
+                  {customersLoading ? (
                     <div className="p-8 text-center">
                       <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                       <p className="mt-2 text-gray-600">顧客データを読み込み中...</p>
@@ -2079,35 +1675,35 @@ const YarisugiDashboard = () => {
                       )}
                     </div>
                   ) : (
-                    <table className="w-full">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">会社名</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">担当者</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">業種</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ステータス</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">担当営業</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">最終更新</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">会社名</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">担当者</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">業種</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ステータス</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">担当営業</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">最終更新</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
                         {filteredCustomers.map((customer) => (
                           <tr key={customer.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm font-medium text-gray-900">{customer.companyName}</div>
                               {customer.siteUrl && (
                                 <div className="text-sm text-gray-500">{customer.siteUrl}</div>
                               )}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
                               <div className="text-sm text-gray-900">{customer.customerName}</div>
                               {customer.email && (
                                 <div className="text-sm text-gray-500">{customer.email}</div>
                               )}
-                            </td>
+                        </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.industry || '-'}</td>
-                            <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-6 py-4 whitespace-nowrap">
                               <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                                 customer.status === '新規' ? 'bg-blue-100 text-blue-800' :
                                 customer.status === '商談中' ? 'bg-yellow-100 text-yellow-800' :
@@ -2116,12 +1712,12 @@ const YarisugiDashboard = () => {
                               }`}>
                                 {customer.status}
                               </span>
-                            </td>
+                        </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.salesPerson || '-'}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                               {customer.updatedAt ? new Date(customer.updatedAt).toLocaleDateString('ja-JP') : '-'}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex gap-2">
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium flex gap-2">
                               <Button 
                                 size="sm" 
                                 variant="secondary"
@@ -2135,11 +1731,11 @@ const YarisugiDashboard = () => {
                               >
                                 詳細
                               </Button>
-                            </td>
-                          </tr>
+                        </td>
+                      </tr>
                         ))}
-                      </tbody>
-                    </table>
+                    </tbody>
+                  </table>
                   )}
                 </div>
               </div>
@@ -3160,7 +2756,7 @@ ${selectedProcess.name}の件でご連絡させていただきました。
                         className="w-full p-2 border rounded focus:ring-2 focus:ring-blue-500"
                         placeholder="株式会社サンプル"
                       />
-                    </div>
+        </div>
                     
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -3308,6 +2904,931 @@ ${selectedProcess.name}の件でご連絡させていただきました。
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {/* FAQ作成・編集モーダル */}
+          {showFaqForm && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+                <div className="p-6 border-b">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-xl font-bold">
+                      {editingFaq ? 'FAQ編集' : 'FAQ追加'}
+                    </h3>
+                    <button 
+                      onClick={() => {
+                        setShowFaqForm(false);
+                        resetFaqForm();
+                      }}
+                      className="text-gray-500 hover:text-gray-700 text-2xl"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">カテゴリ</label>
+                    <select 
+                      value={faqForm.category}
+                      onChange={(e) => setFaqForm(prev => ({...prev, category: e.target.value}))}
+                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      {categories.slice(1).map(category => (
+                        <option key={category.value} value={category.value}>{category.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">質問</label>
+                    <input 
+                      type="text"
+                      value={faqForm.question}
+                      onChange={(e) => setFaqForm(prev => ({...prev, question: e.target.value}))}
+                      placeholder="よくある質問を入力してください"
+                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">回答</label>
+                    <textarea 
+                      value={faqForm.answer}
+                      onChange={(e) => setFaqForm(prev => ({...prev, answer: e.target.value}))}
+                      rows="6"
+                      placeholder="回答を入力してください"
+                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">タグ（カンマ区切り）</label>
+                    <input 
+                      type="text"
+                      value={faqForm.tags.join(', ')}
+                      onChange={(e) => setFaqForm(prev => ({
+                        ...prev, 
+                        tags: e.target.value.split(',').map(tag => tag.trim()).filter(tag => tag)
+                      }))}
+                      placeholder="料金, プラン, 無料（カンマ区切りで入力）"
+                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="isPublic"
+                      checked={faqForm.isPublic}
+                      onChange={(e) => setFaqForm(prev => ({...prev, isPublic: e.target.checked}))}
+                      className="text-indigo-600"
+                    />
+                    <label htmlFor="isPublic" className="text-sm text-gray-700">公開する</label>
+                  </div>
+                  
+                  <div className="flex gap-4 pt-4">
+                    <button 
+                      onClick={async () => {
+                        try {
+                          if (editingFaq) {
+                            await updateFaq(editingFaq.id, faqForm);
+                          } else {
+                            await createFaq(faqForm);
+                          }
+                          setShowFaqForm(false);
+                          resetFaqForm();
+                        } catch (err) {
+                          console.error('FAQ保存エラー:', err);
+                        }
+                      }}
+                      className="bg-indigo-500 text-white px-6 py-2 rounded-lg hover:bg-indigo-600 transition-colors"
+                    >
+                      {editingFaq ? '更新' : '追加'}
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setShowFaqForm(false);
+                        resetFaqForm();
+                      }}
+                      className="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+                    >
+                      キャンセル
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* AI自動生成モーダル */}
+          {showAiGenerator && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                <div className="p-6 border-b">
+                  <div className="flex justify-between items-center">
+                    <h3 className="text-xl font-bold">AI自動生成 - FAQ作成</h3>
+                    <button 
+                      onClick={() => setShowAiGenerator(false)}
+                      className="text-gray-500 hover:text-gray-700 text-2xl"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="p-6">
+                  {!uploadedContent ? (
+                    <div>
+                      <h1 className="text-3xl font-bold mb-8 text-center">FAQ自動生成システム</h1>
+                      
+                      <div className="grid md:grid-cols-2 gap-8">
+                        {/* ファイルアップロード */}
+                        <div className="bg-white p-8 rounded-lg shadow-lg border-2 border-dashed border-blue-300 hover:border-blue-500 transition-colors">
+                          <div className="text-center">
+                            <div className="text-6xl mb-4">📁</div>
+                            <h2 className="text-xl font-bold mb-2">ファイルをアップロード</h2>
+                            <p className="text-gray-600 mb-4">PDF, Word, Excel, PowerPoint対応</p>
+                            <input
+                              type="file"
+                              multiple
+                              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+                              onChange={(e) => {
+                                const files = Array.from(e.target.files);
+                                setUploadedFiles(files);
+                                // ファイル内容を読み込み（簡易版）
+                                const reader = new FileReader();
+                                reader.onload = (e) => {
+                                  setUploadedContent(e.target.result);
+                                };
+                                reader.readAsText(files[0]);
+                              }}
+                              className="hidden"
+                              id="file-upload"
+                            />
+                            <label 
+                              htmlFor="file-upload"
+                              className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition-colors cursor-pointer"
+                            >
+                              ファイルを選択
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* テキスト入力 */}
+                        <div className="bg-white p-8 rounded-lg shadow-lg border-2 border-dashed border-green-300 hover:border-green-500 transition-colors">
+                          <div className="text-center">
+                            <div className="text-6xl mb-4">✍️</div>
+                            <h2 className="text-xl font-bold mb-2">テキストを入力</h2>
+                            <p className="text-gray-600 mb-4">直接テキストを入力してFAQを生成</p>
+                            <textarea
+                              value={uploadedContent}
+                              onChange={(e) => setUploadedContent(e.target.value)}
+                              placeholder="FAQを生成したいテキストを入力してください..."
+                              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                              rows="8"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {uploadedContent && (
+                        <div className="mt-8 text-center">
+                          <button
+                            onClick={async () => {
+                              try {
+                                await generateFaqsFromContent(uploadedContent);
+                              } catch (err) {
+                                console.error('AI生成エラー:', err);
+                              }
+                            }}
+                            className="bg-indigo-500 text-white px-8 py-3 rounded-lg hover:bg-indigo-600 transition-colors text-lg font-semibold"
+                          >
+                            🤖 AIでFAQを生成
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="flex justify-between items-center mb-6">
+                        <div>
+                          <h1 className="text-2xl font-bold">FAQ編集・登録画面</h1>
+                          <p className="text-gray-600 mt-1">アップロードされた内容: {uploadedContent}</p>
+                        </div>
+                        <button
+                          onClick={() => setUploadedContent('')}
+                          className="text-gray-500 hover:text-gray-700"
+                        >
+                          ← 戻る
+                        </button>
+                      </div>
+
+                      {/* コントロールバー */}
+                      <div className="flex flex-wrap gap-4 mb-6">
+                        <select
+                          value={selectedCategory}
+                          onChange={(e) => setSelectedCategory(e.target.value)}
+                          className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="all">全カテゴリ</option>
+                          {categories.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+
+                        <input
+                          type="text"
+                          placeholder="🔍 質問・回答を検索"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+
+                        <button
+                          onClick={addNewGeneratedFaq}
+                          className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
+                        >
+                          ➕ 新規FAQ追加
+                        </button>
+
+                        <button
+                          onClick={saveAllGeneratedFaqs}
+                          className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors"
+                        >
+                          💾 すべて保存 ({generatedFaqs.filter(f => f.status !== 'saved' && f.similarity < 80).length}件)
+                        </button>
+                      </div>
+
+                      {/* 統計情報 */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-blue-50 p-4 rounded-lg">
+                          <div className="text-2xl font-bold text-blue-600">{generatedFaqs.length}</div>
+                          <div className="text-sm text-gray-600">総FAQ数</div>
+                        </div>
+                        <div className="bg-green-50 p-4 rounded-lg">
+                          <div className="text-2xl font-bold text-green-600">
+                            {generatedFaqs.filter(f => f.status === 'saved').length}
+                          </div>
+                          <div className="text-sm text-gray-600">保存済み</div>
+                        </div>
+                        <div className="bg-yellow-50 p-4 rounded-lg">
+                          <div className="text-2xl font-bold text-yellow-600">
+                            {generatedFaqs.filter(f => f.status === 'edited').length}
+                          </div>
+                          <div className="text-sm text-gray-600">編集済み</div>
+                        </div>
+                        <div className="bg-red-50 p-4 rounded-lg">
+                          <div className="text-2xl font-bold text-red-600">
+                            {generatedFaqs.filter(f => f.similarity > 80).length}
+                          </div>
+                          <div className="text-sm text-gray-600">重複の可能性</div>
+                        </div>
+                      </div>
+
+                      {/* FAQ一覧 */}
+                      <div className="space-y-4">
+                        {isGenerating ? (
+                          <div className="text-center py-12">
+                            <div className="text-4xl mb-4">🤖</div>
+                            <p className="text-lg font-medium">AI分析中...</p>
+                            <p className="text-gray-600">網羅的なFAQを生成しています</p>
+                          </div>
+                        ) : (
+                          filteredFaqs.map((faq) => (
+                            <div
+                              key={faq.id}
+                              className={`border rounded-lg p-4 transition-all ${
+                                faq.status === 'saved' ? 'bg-gray-50 border-gray-300' :
+                                faq.status === 'edited' ? 'bg-yellow-50 border-yellow-300' :
+                                faq.similarity > 80 ? 'bg-red-50 border-red-300' :
+                                'bg-white border-gray-200'
+                              }`}
+                            >
+                              <div className="flex items-start gap-4">
+                                <div className="flex-1 space-y-3">
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      value={faq.category}
+                                      onChange={(e) => updateGeneratedFaq(faq.id, 'category', e.target.value)}
+                                      className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium focus:ring-2 focus:ring-blue-500"
+                                      placeholder="カテゴリ"
+                                    />
+                                    {faq.status === 'edited' && (
+                                      <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">編集済</span>
+                                    )}
+                                    {faq.status === 'saved' && (
+                                      <span className="text-xs bg-green-200 text-green-800 px-2 py-1 rounded-full">保存済</span>
+                                    )}
+                                    {faq.similarity > 80 && (
+                                      <span className="text-xs bg-red-200 text-red-800 px-2 py-1 rounded-full">
+                                        類似度: {faq.similarity}% - 重複の可能性
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <input
+                                    type="text"
+                                    value={faq.question}
+                                    onChange={(e) => updateGeneratedFaq(faq.id, 'question', e.target.value)}
+                                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 font-medium"
+                                    placeholder="質問を入力"
+                                  />
+
+                                  <textarea
+                                    value={faq.answer}
+                                    onChange={(e) => updateGeneratedFaq(faq.id, 'answer', e.target.value)}
+                                    rows="3"
+                                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 resize-vertical"
+                                    placeholder="回答を入力"
+                                  />
+
+                                  {showDuplicateWarning[faq.id] && (
+                                    <div className="bg-red-100 border border-red-300 p-3 rounded-lg text-sm">
+                                      <p className="font-medium text-red-800">⚠️ 重複の可能性があります</p>
+                                      <p className="text-red-700">既存のFAQと類似度が高いため、内容を確認してください。</p>
+                                      <button
+                                        onClick={() => {
+                                          setShowDuplicateWarning({ ...showDuplicateWarning, [faq.id]: false });
+                                          saveGeneratedFaq({ ...faq, similarity: 0 });
+                                        }}
+                                        className="mt-2 text-red-600 underline text-sm"
+                                      >
+                                        それでも保存する
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => saveGeneratedFaq(faq)}
+                                    disabled={faq.status === 'saved'}
+                                    className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                                  >
+                                    保存
+                                  </button>
+                                  <button
+                                    onClick={() => deleteGeneratedFaq(faq.id)}
+                                    className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors"
+                                  >
+                                    削除
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* AIアシストFAQ作成モーダル */}
+          {showAiAssist && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-lg max-w-7xl w-full max-h-[95vh] overflow-y-auto">
+                <div className="p-6 border-b">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">✨</span>
+                      <h3 className="text-xl font-bold">AIアシスト FAQ作成</h3>
+                      <span className="bg-purple-100 text-purple-700 text-xs px-2 py-1 rounded-full font-medium">おすすめ</span>
+                    </div>
+                    <button 
+                      onClick={() => setShowAiAssist(false)}
+                      className="text-gray-500 hover:text-gray-700 text-2xl"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="p-6">
+                  {!uploadedContent ? (
+                    <div>
+                      <h1 className="text-3xl font-bold mb-8 text-center">FAQ自動生成システム</h1>
+                      
+                      <div className="grid md:grid-cols-2 gap-8">
+                        {/* ファイルアップロード */}
+                        <div className="bg-white p-8 rounded-lg shadow-lg border-2 border-dashed border-blue-300 hover:border-blue-500 transition-colors">
+                          <div className="text-center">
+                            <div className="text-6xl mb-4">📁</div>
+                            <h2 className="text-xl font-bold mb-2">ファイルをアップロード</h2>
+                            <p className="text-gray-600 mb-4">PDF, Word, Excel, PowerPoint対応</p>
+                            <input
+                              type="file"
+                              multiple
+                              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+                              onChange={(e) => {
+                                const files = Array.from(e.target.files);
+                                setUploadedFiles(files);
+                                // ファイル内容を読み込み（簡易版）
+                                const reader = new FileReader();
+                                reader.onload = (e) => {
+                                  setUploadedContent(e.target.result);
+                                };
+                                reader.readAsText(files[0]);
+                              }}
+                              className="hidden"
+                              id="file-upload"
+                            />
+                            <label 
+                              htmlFor="file-upload"
+                              className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition-colors cursor-pointer"
+                            >
+                              ファイルを選択
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* テキスト入力 */}
+                        <div className="bg-white p-8 rounded-lg shadow-lg border-2 border-dashed border-green-300 hover:border-green-500 transition-colors">
+                          <div className="text-center">
+                            <div className="text-6xl mb-4">✍️</div>
+                            <h2 className="text-xl font-bold mb-2">テキストを入力</h2>
+                            <p className="text-gray-600 mb-4">直接テキストを入力してFAQを生成</p>
+                            <textarea
+                              value={uploadedContent}
+                              onChange={(e) => setUploadedContent(e.target.value)}
+                              placeholder="FAQを生成したいテキストを入力してください..."
+                              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                              rows="8"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {uploadedContent && (
+                        <div className="mt-8 text-center">
+                          <button
+                            onClick={async () => {
+                              try {
+                                await generateFaqsFromContent(uploadedContent);
+                              } catch (err) {
+                                console.error('AI生成エラー:', err);
+                              }
+                            }}
+                            className="bg-indigo-500 text-white px-8 py-3 rounded-lg hover:bg-indigo-600 transition-colors text-lg font-semibold"
+                          >
+                            🤖 AIでFAQを生成
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="flex justify-between items-center mb-6">
+                        <div>
+                          <h1 className="text-2xl font-bold">FAQ編集・登録画面</h1>
+                          <p className="text-gray-600 mt-1">アップロードされた内容: {uploadedContent}</p>
+                        </div>
+                        <button
+                          onClick={() => setUploadedContent('')}
+                          className="text-gray-500 hover:text-gray-700"
+                        >
+                          ← 戻る
+                        </button>
+                      </div>
+
+                      {/* コントロールバー */}
+                      <div className="flex flex-wrap gap-4 mb-6">
+                        <select
+                          value={selectedCategory}
+                          onChange={(e) => setSelectedCategory(e.target.value)}
+                          className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="all">全カテゴリ</option>
+                          {categories.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+
+                        <input
+                          type="text"
+                          placeholder="🔍 質問・回答を検索"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+
+                        <button
+                          onClick={addNewGeneratedFaq}
+                          className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
+                        >
+                          ➕ 新規FAQ追加
+                        </button>
+
+                        <button
+                          onClick={saveAllGeneratedFaqs}
+                          className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors"
+                        >
+                          💾 すべて保存 ({generatedFaqs.filter(f => f.status !== 'saved' && f.similarity < 80).length}件)
+                        </button>
+                      </div>
+
+                      {/* 統計情報 */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-blue-50 p-4 rounded-lg">
+                          <div className="text-2xl font-bold text-blue-600">{generatedFaqs.length}</div>
+                          <div className="text-sm text-gray-600">総FAQ数</div>
+                        </div>
+                        <div className="bg-green-50 p-4 rounded-lg">
+                          <div className="text-2xl font-bold text-green-600">
+                            {generatedFaqs.filter(f => f.status === 'saved').length}
+                          </div>
+                          <div className="text-sm text-gray-600">保存済み</div>
+                        </div>
+                        <div className="bg-yellow-50 p-4 rounded-lg">
+                          <div className="text-2xl font-bold text-yellow-600">
+                            {generatedFaqs.filter(f => f.status === 'edited').length}
+                          </div>
+                          <div className="text-sm text-gray-600">編集済み</div>
+                        </div>
+                        <div className="bg-red-50 p-4 rounded-lg">
+                          <div className="text-2xl font-bold text-red-600">
+                            {generatedFaqs.filter(f => f.similarity > 80).length}
+                          </div>
+                          <div className="text-sm text-gray-600">重複の可能性</div>
+                        </div>
+                      </div>
+
+                      {/* FAQ一覧 */}
+                      <div className="space-y-4">
+                        {isGenerating ? (
+                          <div className="text-center py-12">
+                            <div className="text-4xl mb-4">🤖</div>
+                            <p className="text-lg font-medium">AI分析中...</p>
+                            <p className="text-gray-600">網羅的なFAQを生成しています</p>
+                          </div>
+                        ) : (
+                          filteredFaqs.map((faq) => (
+                            <div
+                              key={faq.id}
+                              className={`border rounded-lg p-4 transition-all ${
+                                faq.status === 'saved' ? 'bg-gray-50 border-gray-300' :
+                                faq.status === 'edited' ? 'bg-yellow-50 border-yellow-300' :
+                                faq.similarity > 80 ? 'bg-red-50 border-red-300' :
+                                'bg-white border-gray-200'
+                              }`}
+                            >
+                              <div className="flex items-start gap-4">
+                                <div className="flex-1 space-y-3">
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      value={faq.category}
+                                      onChange={(e) => updateGeneratedFaq(faq.id, 'category', e.target.value)}
+                                      className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium focus:ring-2 focus:ring-blue-500"
+                                      placeholder="カテゴリ"
+                                    />
+                                    {faq.status === 'edited' && (
+                                      <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">編集済</span>
+                                    )}
+                                    {faq.status === 'saved' && (
+                                      <span className="text-xs bg-green-200 text-green-800 px-2 py-1 rounded-full">保存済</span>
+                                    )}
+                                    {faq.similarity > 80 && (
+                                      <span className="text-xs bg-red-200 text-red-800 px-2 py-1 rounded-full">
+                                        類似度: {faq.similarity}% - 重複の可能性
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <input
+                                    type="text"
+                                    value={faq.question}
+                                    onChange={(e) => updateGeneratedFaq(faq.id, 'question', e.target.value)}
+                                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 font-medium"
+                                    placeholder="質問を入力"
+                                  />
+
+                                  <textarea
+                                    value={faq.answer}
+                                    onChange={(e) => updateGeneratedFaq(faq.id, 'answer', e.target.value)}
+                                    rows="3"
+                                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 resize-vertical"
+                                    placeholder="回答を入力"
+                                  />
+
+                                  {showDuplicateWarning[faq.id] && (
+                                    <div className="bg-red-100 border border-red-300 p-3 rounded-lg text-sm">
+                                      <p className="font-medium text-red-800">⚠️ 重複の可能性があります</p>
+                                      <p className="text-red-700">既存のFAQと類似度が高いため、内容を確認してください。</p>
+                                      <button
+                                        onClick={() => {
+                                          setShowDuplicateWarning({ ...showDuplicateWarning, [faq.id]: false });
+                                          saveGeneratedFaq({ ...faq, similarity: 0 });
+                                        }}
+                                        className="mt-2 text-red-600 underline text-sm"
+                                      >
+                                        それでも保存する
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => saveGeneratedFaq(faq)}
+                                    disabled={faq.status === 'saved'}
+                                    className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                                  >
+                                    保存
+                                  </button>
+                                  <button
+                                    onClick={() => deleteGeneratedFaq(faq.id)}
+                                    className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors"
+                                  >
+                                    削除
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* AIアシストFAQ作成モーダル */}
+          {showAiAssist && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-lg max-w-7xl w-full max-h-[95vh] overflow-y-auto">
+                <div className="p-6 border-b">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">✨</span>
+                      <h3 className="text-xl font-bold">AIアシスト FAQ作成</h3>
+                      <span className="bg-purple-100 text-purple-700 text-xs px-2 py-1 rounded-full font-medium">おすすめ</span>
+                    </div>
+                    <button 
+                      onClick={() => setShowAiAssist(false)}
+                      className="text-gray-500 hover:text-gray-700 text-2xl"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="p-6">
+                  {!uploadedContent ? (
+                    <div>
+                      <h1 className="text-3xl font-bold mb-8 text-center">FAQ自動生成システム</h1>
+                      
+                      <div className="grid md:grid-cols-2 gap-8">
+                        {/* ファイルアップロード */}
+                        <div className="bg-white p-8 rounded-lg shadow-lg border-2 border-dashed border-blue-300 hover:border-blue-500 transition-colors">
+                          <div className="text-center">
+                            <div className="text-6xl mb-4">📁</div>
+                            <h2 className="text-xl font-bold mb-2">ファイルをアップロード</h2>
+                            <p className="text-gray-600 mb-4">PDF, Word, Excel, PowerPoint対応</p>
+                            <input
+                              type="file"
+                              multiple
+                              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+                              onChange={(e) => {
+                                const files = Array.from(e.target.files);
+                                setUploadedFiles(files);
+                                // ファイル内容を読み込み（簡易版）
+                                const reader = new FileReader();
+                                reader.onload = (e) => {
+                                  setUploadedContent(e.target.result);
+                                };
+                                reader.readAsText(files[0]);
+                              }}
+                              className="hidden"
+                              id="file-upload"
+                            />
+                            <label 
+                              htmlFor="file-upload"
+                              className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition-colors cursor-pointer"
+                            >
+                              ファイルを選択
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* テキスト入力 */}
+                        <div className="bg-white p-8 rounded-lg shadow-lg border-2 border-dashed border-green-300 hover:border-green-500 transition-colors">
+                          <div className="text-center">
+                            <div className="text-6xl mb-4">✍️</div>
+                            <h2 className="text-xl font-bold mb-2">テキストを入力</h2>
+                            <p className="text-gray-600 mb-4">直接テキストを入力してFAQを生成</p>
+                            <textarea
+                              value={uploadedContent}
+                              onChange={(e) => setUploadedContent(e.target.value)}
+                              placeholder="FAQを生成したいテキストを入力してください..."
+                              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                              rows="8"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {uploadedContent && (
+                        <div className="mt-8 text-center">
+                          <button
+                            onClick={async () => {
+                              try {
+                                await generateFaqsFromContent(uploadedContent);
+                              } catch (err) {
+                                console.error('AI生成エラー:', err);
+                              }
+                            }}
+                            className="bg-indigo-500 text-white px-8 py-3 rounded-lg hover:bg-indigo-600 transition-colors text-lg font-semibold"
+                          >
+                            🤖 AIでFAQを生成
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="flex justify-between items-center mb-6">
+                        <div>
+                          <h1 className="text-2xl font-bold">FAQ編集・登録画面</h1>
+                          <p className="text-gray-600 mt-1">アップロードされた内容: {uploadedContent}</p>
+                        </div>
+                        <button
+                          onClick={() => setUploadedContent('')}
+                          className="text-gray-500 hover:text-gray-700"
+                        >
+                          ← 戻る
+                        </button>
+                      </div>
+
+                      {/* コントロールバー */}
+                      <div className="flex flex-wrap gap-4 mb-6">
+                        <select
+                          value={selectedCategory}
+                          onChange={(e) => setSelectedCategory(e.target.value)}
+                          className="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="all">全カテゴリ</option>
+                          {categories.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+
+                        <input
+                          type="text"
+                          placeholder="🔍 質問・回答を検索"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+
+                        <button
+                          onClick={addNewGeneratedFaq}
+                          className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors"
+                        >
+                          ➕ 新規FAQ追加
+                        </button>
+
+                        <button
+                          onClick={saveAllGeneratedFaqs}
+                          className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors"
+                        >
+                          💾 すべて保存 ({generatedFaqs.filter(f => f.status !== 'saved' && f.similarity < 80).length}件)
+                        </button>
+                      </div>
+
+                      {/* 統計情報 */}
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-blue-50 p-4 rounded-lg">
+                          <div className="text-2xl font-bold text-blue-600">{generatedFaqs.length}</div>
+                          <div className="text-sm text-gray-600">総FAQ数</div>
+                        </div>
+                        <div className="bg-green-50 p-4 rounded-lg">
+                          <div className="text-2xl font-bold text-green-600">
+                            {generatedFaqs.filter(f => f.status === 'saved').length}
+                          </div>
+                          <div className="text-sm text-gray-600">保存済み</div>
+                        </div>
+                        <div className="bg-yellow-50 p-4 rounded-lg">
+                          <div className="text-2xl font-bold text-yellow-600">
+                            {generatedFaqs.filter(f => f.status === 'edited').length}
+                          </div>
+                          <div className="text-sm text-gray-600">編集済み</div>
+                        </div>
+                        <div className="bg-red-50 p-4 rounded-lg">
+                          <div className="text-2xl font-bold text-red-600">
+                            {generatedFaqs.filter(f => f.similarity > 80).length}
+                          </div>
+                          <div className="text-sm text-gray-600">重複の可能性</div>
+                        </div>
+                      </div>
+
+                      {/* FAQ一覧 */}
+                      <div className="space-y-4">
+                        {isGenerating ? (
+                          <div className="text-center py-12">
+                            <div className="text-4xl mb-4">🤖</div>
+                            <p className="text-lg font-medium">AI分析中...</p>
+                            <p className="text-gray-600">網羅的なFAQを生成しています</p>
+                          </div>
+                        ) : (
+                          filteredFaqs.map((faq) => (
+                            <div
+                              key={faq.id}
+                              className={`border rounded-lg p-4 transition-all ${
+                                faq.status === 'saved' ? 'bg-gray-50 border-gray-300' :
+                                faq.status === 'edited' ? 'bg-yellow-50 border-yellow-300' :
+                                faq.similarity > 80 ? 'bg-red-50 border-red-300' :
+                                'bg-white border-gray-200'
+                              }`}
+                            >
+                              <div className="flex items-start gap-4">
+                                <div className="flex-1 space-y-3">
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      value={faq.category}
+                                      onChange={(e) => updateGeneratedFaq(faq.id, 'category', e.target.value)}
+                                      className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium focus:ring-2 focus:ring-blue-500"
+                                      placeholder="カテゴリ"
+                                    />
+                                    {faq.status === 'edited' && (
+                                      <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded-full">編集済</span>
+                                    )}
+                                    {faq.status === 'saved' && (
+                                      <span className="text-xs bg-green-200 text-green-800 px-2 py-1 rounded-full">保存済</span>
+                                    )}
+                                    {faq.similarity > 80 && (
+                                      <span className="text-xs bg-red-200 text-red-800 px-2 py-1 rounded-full">
+                                        類似度: {faq.similarity}% - 重複の可能性
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <input
+                                    type="text"
+                                    value={faq.question}
+                                    onChange={(e) => updateGeneratedFaq(faq.id, 'question', e.target.value)}
+                                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 font-medium"
+                                    placeholder="質問を入力"
+                                  />
+
+                                  <textarea
+                                    value={faq.answer}
+                                    onChange={(e) => updateGeneratedFaq(faq.id, 'answer', e.target.value)}
+                                    rows="3"
+                                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 resize-vertical"
+                                    placeholder="回答を入力"
+                                  />
+
+                                  {showDuplicateWarning[faq.id] && (
+                                    <div className="bg-red-100 border border-red-300 p-3 rounded-lg text-sm">
+                                      <p className="font-medium text-red-800">⚠️ 重複の可能性があります</p>
+                                      <p className="text-red-700">既存のFAQと類似度が高いため、内容を確認してください。</p>
+                                      <button
+                                        onClick={() => {
+                                          setShowDuplicateWarning({ ...showDuplicateWarning, [faq.id]: false });
+                                          saveGeneratedFaq({ ...faq, similarity: 0 });
+                                        }}
+                                        className="mt-2 text-red-600 underline text-sm"
+                                      >
+                                        それでも保存する
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => saveGeneratedFaq(faq)}
+                                    disabled={faq.status === 'saved'}
+                                    className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                                  >
+                                    保存
+                                  </button>
+                                  <button
+                                    onClick={() => deleteGeneratedFaq(faq.id)}
+                                    className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors"
+                                  >
+                                    削除
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
