@@ -25,6 +25,9 @@ class AwsApiClient {
     try {
       const token = await this.getAuthToken();
       console.log('🔑 認証トークン:', token ? '取得済み' : '未取得');
+      if (!token) {
+        console.error('❌ 認証トークンが取得できません。ログインしていない可能性があります。');
+      }
       
       const defaultHeaders = {
         'Content-Type': 'application/json',
@@ -142,6 +145,50 @@ class AwsApiClient {
   async deleteFaq(faqId) {
     return this.request(`/faqs/${faqId}`, {
       method: 'DELETE'
+    });
+  }
+
+  // AI自動生成API
+  async generateFaqsFromContent(content, contentType = 'text', saveToDb = false) {
+    console.log('🚀 AI生成API呼び出し開始:', { 
+      content: content.substring(0, 100) + '...', 
+      contentType, 
+      saveToDb,
+      endpoint: `${this.baseURL}/ai-generate`
+    });
+    
+    try {
+      const result = await this.request('/ai-generate', {
+        method: 'POST',
+        body: JSON.stringify({
+          content,
+          contentType,
+          saveToDb
+        })
+      });
+      console.log('✅ AI生成API成功:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ AI生成API エラー:', error);
+      throw error;
+    }
+  }
+
+  async generateFaqsFromFile(file, saveToDb = false) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const content = e.target.result;
+          const contentType = file.type === 'application/pdf' ? 'pdf' : 'text';
+          const result = await this.generateFaqsFromContent(content, contentType, saveToDb);
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      reader.onerror = () => reject(new Error('File reading failed'));
+      reader.readAsDataURL(file);
     });
   }
 
