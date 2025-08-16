@@ -20,6 +20,7 @@ provider "aws" {
 # ローカル変数
 locals {
   faqs_integration_uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.faqs_api.arn}/invocations"
+  ai_generator_integration_uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.ai_generator.arn}/invocations"
 }
 
 # ユーザーテーブル
@@ -522,6 +523,30 @@ resource "aws_api_gateway_method" "faq_options" {
   authorization = "NONE"
 }
 
+# AI生成APIリソース
+resource "aws_api_gateway_resource" "ai_generate" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "ai-generate"
+}
+
+# AI生成 (POST /ai-generate)
+resource "aws_api_gateway_method" "ai_generate_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.ai_generate.id
+  http_method   = "POST"
+  authorization = "NONE"  # 一時的に認証を無効化してテスト
+  # authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# CORS用のOPTIONSメソッド (ai-generate)
+resource "aws_api_gateway_method" "ai_generate_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.ai_generate.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
 # Lambda関数との統合
 resource "aws_api_gateway_integration" "customers_get" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -629,6 +654,39 @@ resource "aws_lambda_permission" "faqs_api" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*/*"
 }
 
+# AI生成Lambda関数
+resource "aws_lambda_function" "ai_generator" {
+  filename         = "lambda_functions/ai_generator_lambda.zip"
+  function_name    = "yarisugi-ai-generator"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "ai_generator.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 60
+  source_code_hash = filebase64sha256("lambda_functions/ai_generator_lambda.zip")
+
+  environment {
+    variables = {
+      FAQS_TABLE = aws_dynamodb_table.faqs.name
+      OPENAI_API_KEY = var.openai_api_key
+      OPENAI_MODEL = "gpt-4o-mini"
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# AI生成Lambda関数の権限
+resource "aws_lambda_permission" "ai_generator" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.ai_generator.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*/*"
+}
+
 # FAQ API Gateway統合
 resource "aws_api_gateway_integration" "faqs_get" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -703,6 +761,60 @@ resource "aws_api_gateway_integration" "faqs_options" {
   depends_on = [aws_lambda_permission.faqs_api]
 }
 
+# AI生成API Gateway統合
+resource "aws_api_gateway_integration" "ai_generate_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.ai_generate.id
+  http_method = aws_api_gateway_method.ai_generate_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = local.ai_generator_integration_uri
+
+  depends_on = [aws_lambda_permission.ai_generator]
+}
+
+# CORS用の統合 (ai-generate)
+resource "aws_api_gateway_integration" "ai_generate_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.ai_generate.id
+  http_method = aws_api_gateway_method.ai_generate_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# CORS用のメソッドレスポンス (ai-generate)
+resource "aws_api_gateway_method_response" "ai_generate_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.ai_generate.id
+  http_method = aws_api_gateway_method.ai_generate_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# CORS用の統合レスポンス (ai-generate)
+resource "aws_api_gateway_integration_response" "ai_generate_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.ai_generate.id
+  http_method = aws_api_gateway_method.ai_generate_options.http_method
+  status_code = aws_api_gateway_method_response.ai_generate_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Authorization,Content-Type,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,Origin'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
 # CORS用のメソッドレスポンス (customers)
 resource "aws_api_gateway_method_response" "customers_options" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -773,19 +885,19 @@ resource "aws_api_gateway_method_response" "faqs_options" {
   }
 }
 
-# CORS用の統合レスポンス (faqs)
-resource "aws_api_gateway_integration_response" "faqs_options" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.faqs.id
-  http_method = aws_api_gateway_method.faqs_options.http_method
-  status_code = aws_api_gateway_method_response.faqs_options.status_code
-
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = "'Authorization,Content-Type,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,Origin'"
-    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
-  }
-}
+# CORS用の統合レスポンス (faqs) - AWS_PROXY統合では不要のためコメントアウト
+# resource "aws_api_gateway_integration_response" "faqs_options" {
+#   rest_api_id = aws_api_gateway_rest_api.main.id
+#   resource_id = aws_api_gateway_resource.faqs.id
+#   http_method = aws_api_gateway_method.faqs_options.http_method
+#   status_code = aws_api_gateway_method_response.faqs_options.status_code
+#
+#   response_parameters = {
+#     "method.response.header.Access-Control-Allow-Headers" = "'Authorization,Content-Type,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,Origin'"
+#     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+#     "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+#   }
+# }
 
 # CORS用の統合 (faq)
 resource "aws_api_gateway_integration" "faq_options" {
@@ -925,9 +1037,14 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_method.faq_options,
     aws_api_gateway_integration.faq_options,
     aws_api_gateway_method_response.faqs_options,
-    aws_api_gateway_integration_response.faqs_options,
     aws_api_gateway_method_response.faq_options,
-    aws_api_gateway_integration_response.faq_options
+    aws_api_gateway_integration_response.faq_options,
+    aws_api_gateway_method.ai_generate_post,
+    aws_api_gateway_integration.ai_generate_post,
+    aws_api_gateway_method.ai_generate_options,
+    aws_api_gateway_integration.ai_generate_options,
+    aws_api_gateway_method_response.ai_generate_options,
+    aws_api_gateway_integration_response.ai_generate_options
   ]
 
   lifecycle {

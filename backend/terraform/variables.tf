@@ -22,4 +22,11 @@ variable "domain_name" {
   description = "ドメイン名（本番環境用）"
   type        = string
   default     = "your-domain.com"
+}
+
+variable "openai_api_key" {
+  description = "OpenAI API Key"
+  type        = string
+  default     = ""
+  sensitive   = true
 } 

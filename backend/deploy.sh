@@ -9,6 +9,15 @@ PROJECT_NAME="yarisugi-sales"
 ENVIRONMENT="dev"
 AWS_REGION="ap-northeast-1"
 
+# OpenAI API Keyの設定
+if [ -z "$OPENAI_API_KEY" ]; then
+    echo "⚠️  OPENAI_API_KEY環境変数が設定されていません"
+    echo "🤖 AI自動生成機能を使用する場合は、OpenAI API Keyを設定してください"
+    echo "export OPENAI_API_KEY=your-api-key-here"
+    echo ""
+    read -p "OpenAI API Keyを入力してください（空の場合はスキップ）: " OPENAI_API_KEY
+fi
+
 echo "🚀 AWSリソースのデプロイを開始します..."
 
 # Terraformディレクトリに移動
@@ -23,7 +32,8 @@ echo "📋 Terraformプラン実行中..."
 terraform plan \
   -var="project_name=${PROJECT_NAME}" \
   -var="environment=${ENVIRONMENT}" \
-  -var="aws_region=${AWS_REGION}"
+  -var="aws_region=${AWS_REGION}" \
+  -var="openai_api_key=${OPENAI_API_KEY:-""}"
 
 # 確認
 read -p "デプロイを続行しますか？ (y/N): " -n 1 -r
@@ -39,6 +49,7 @@ terraform apply \
   -var="project_name=${PROJECT_NAME}" \
   -var="environment=${ENVIRONMENT}" \
   -var="aws_region=${AWS_REGION}" \
+  -var="openai_api_key=${OPENAI_API_KEY:-""}" \
   -auto-approve
 
 # 出力値を取得
