@@ -85,6 +85,81 @@ Yarisugi Salesは、営業活動を効率化し、顧客情報を一元管理し
 - Terraform
 - OpenAI API Key（AI FAQ生成機能用）
 
+### OpenAI API Key設定手順
+
+AI FAQ生成機能を使用するためには、OpenAI APIキーの取得と設定が必要です。
+
+#### 1. OpenAI APIキーの取得
+
+1. **OpenAI Platform にアクセス**
+   - [https://platform.openai.com/](https://platform.openai.com/) にアクセス
+   
+2. **アカウント作成/ログイン**
+   - Googleアカウント等でサインアップまたはログイン
+   
+3. **API Keys ページに移動**
+   - 右上のメニューから「API Keys」を選択
+   - [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+   
+4. **新しいAPIキーを作成**
+   - 「Create new secret key」ボタンをクリック
+   - 名前を入力（例：`yarisugi-sales-ai-generator`）
+   - 「Create secret key」をクリック
+   
+5. **APIキーをコピー**
+   - 生成されたAPIキー（`sk-proj-...`で始まる文字列）をコピー
+   - ⚠️ **重要**: このキーは一度しか表示されないため、安全な場所に保存してください
+
+#### 2. 使用量と課金設定
+
+1. **Usage & Billing 設定**
+   - [https://platform.openai.com/usage](https://platform.openai.com/usage)
+   
+2. **使用量制限設定**
+   - 「Usage limits」で月間使用制限を設定（推奨：$5-10）
+   
+3. **支払い方法追加**
+   - 「Billing」→「Payment methods」でクレジットカードを追加
+
+#### 3. APIキーのTerraform設定
+
+1. **terraform.tfvarsファイル作成**
+   ```bash
+   cd backend/terraform
+   cp terraform.tfvars.example terraform.tfvars
+   ```
+
+2. **APIキーを設定**
+   ```bash
+   # terraform.tfvarsファイルを編集
+   vim terraform.tfvars
+   ```
+   
+   ```env
+   # OpenAI API Key（取得したキーに置き換え）
+   openai_api_key = "sk-proj-your-actual-openai-api-key-here"
+   ```
+
+3. **デプロイ実行**
+   ```bash
+   terraform plan
+   terraform apply
+   ```
+
+#### 4. セキュリティ考慮事項
+
+- ✅ **Secrets Manager**: APIキーはAWS Secrets Managerで暗号化保存
+- ✅ **IAM権限**: AI Lambda関数のみがアクセス可能
+- ✅ **.gitignore**: terraform.tfvarsファイルはGitで除外済み
+- ❌ **平文保存禁止**: APIキーをコードに直接記述しない
+
+#### 5. コスト管理
+
+AI FAQ生成の推定コスト（GPT-4o-mini使用）：
+- **1回のFAQ生成**: 約$0.01-0.05
+- **月間100回実行**: 約$1-5
+- **推奨月間制限**: $10
+
 ### 1. フロントエンドセットアップ
 
 ```bash
@@ -164,6 +239,87 @@ yarisugi-sales/
 │   └── deploy.sh          # デプロイスクリプト
 ├── api-specification.yaml # OpenAPI仕様書
 └── README.md              # このファイル
+```
+
+## 🔧 トラブルシューティング
+
+### AI FAQ生成機能のエラー対応
+
+#### 1. "OpenAI API key not configured" エラー
+
+**症状**: AI生成時に500エラーが発生し、ログに"OpenAI API key not configured"が表示される
+
+**原因と対処法**:
+1. **APIキー未設定**: terraform.tfvarsファイルにOpenAI APIキーが設定されていない
+   ```bash
+   # terraform.tfvarsファイルを確認
+   cat backend/terraform/terraform.tfvars
+   ```
+
+2. **Secrets Manager未更新**: TerraformでAPIキーがSecrets Managerに反映されていない
+   ```bash
+   # Terraformを再実行
+   cd backend/terraform
+   terraform apply
+   ```
+
+#### 2. "AccessDeniedException" エラー（Secrets Manager）
+
+**症状**: Lambda関数でSecrets Managerにアクセスできない
+
+**原因と対処法**:
+1. **IAMロール権限不足**: Lambda関数が正しいIAMロールを使用していない
+   ```bash
+   # Lambda関数のIAMロールを確認
+   aws lambda get-function --function-name yarisugi-ai-generator
+   
+   # 正しいロールに変更
+   aws lambda update-function-configuration \
+     --function-name yarisugi-ai-generator \
+     --role arn:aws:iam::YOUR-ACCOUNT-ID:role/yarisugi-sales-ai-lambda-role-dev
+   ```
+
+2. **IAMポリシー未適用**: AI Lambda専用ロールにSecrets Manager権限が付与されていない
+   ```bash
+   # IAMポリシーを確認
+   aws iam list-role-policies --role-name yarisugi-sales-ai-lambda-role-dev
+   ```
+
+#### 3. API呼び出し制限エラー
+
+**症状**: "Rate limit exceeded" エラーが発生
+
+**対処法**:
+1. **使用量制限確認**: OpenAI Platform で使用量を確認
+2. **課金設定**: 支払い方法が正しく設定されているか確認
+3. **時間を置いて再試行**: しばらく時間を置いてから再実行
+
+#### 4. Lambda関数デプロイエラー
+
+**症状**: Terraformでapplyする際にLambda関数のデプロイが失敗
+
+**対処法**:
+1. **zipファイル再作成**:
+   ```bash
+   cd backend/lambda_functions
+   zip -r ai_generator_lambda.zip ai_generator/ -x "*.pyc" "*__pycache__*"
+   cp ai_generator_lambda.zip ../terraform/lambda_functions/
+   ```
+
+2. **手動でLambda更新**:
+   ```bash
+   aws lambda update-function-code \
+     --function-name yarisugi-ai-generator \
+     --zip-file fileb://ai_generator_lambda.zip
+   ```
+
+#### 5. ログ確認方法
+
+```bash
+# CloudWatch Logsでエラー確認
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/yarisugi-ai-generator \
+  --start-time $(date -d '10 minutes ago' +%s)000
 ```
 
 ## 🔧 開発ガイドライン

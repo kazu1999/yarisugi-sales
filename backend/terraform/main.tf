@@ -248,9 +248,27 @@ resource "aws_cognito_user_pool_client" "main" {
   refresh_token_validity = 30
 }
 
-# Lambda関数用のIAMロール
+# Lambda関数用のIAMロール（FAQ API用）
 resource "aws_iam_role" "lambda_role" {
   name = "${var.project_name}-lambda-role-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# AI Lambda実行ロール（Secrets Manager権限付き）
+resource "aws_iam_role" "ai_lambda_role" {
+  name = "${var.project_name}-ai-lambda-role-${var.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -300,6 +318,49 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "logs:PutLogEvents"
         ]
         Resource = "arn:aws:logs:*:*:*"
+      }
+    ]
+  })
+}
+
+# AI Lambda関数用のIAMポリシー（Secrets Manager権限付き）
+resource "aws_iam_role_policy" "ai_lambda_policy" {
+  name = "${var.project_name}-ai-lambda-policy-${var.environment}"
+  role = aws_iam_role.ai_lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = [
+          aws_dynamodb_table.faqs.arn,
+          "${aws_dynamodb_table.faqs.arn}/index/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = aws_secretsmanager_secret.openai_api_key.arn
       }
     ]
   })
@@ -654,11 +715,28 @@ resource "aws_lambda_permission" "faqs_api" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*/*"
 }
 
+# OpenAI API Key Secret
+resource "aws_secretsmanager_secret" "openai_api_key" {
+  name                    = "${var.project_name}-openai-api-key-${var.environment}"
+  description             = "OpenAI API Key for AI FAQ generation"
+  recovery_window_in_days = 7
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "openai_api_key" {
+  secret_id     = aws_secretsmanager_secret.openai_api_key.id
+  secret_string = var.openai_api_key
+}
+
 # AI生成Lambda関数
 resource "aws_lambda_function" "ai_generator" {
   filename         = "lambda_functions/ai_generator_lambda.zip"
   function_name    = "yarisugi-ai-generator"
-  role            = aws_iam_role.lambda_role.arn
+  role            = aws_iam_role.ai_lambda_role.arn
   handler         = "ai_generator.lambda_handler"
   runtime         = "python3.11"
   timeout         = 60
@@ -667,7 +745,7 @@ resource "aws_lambda_function" "ai_generator" {
   environment {
     variables = {
       FAQS_TABLE = aws_dynamodb_table.faqs.name
-      OPENAI_API_KEY = var.openai_api_key
+      OPENAI_API_SECRET_ARN = aws_secretsmanager_secret.openai_api_key.arn
       OPENAI_MODEL = "gpt-4o-mini"
     }
   }

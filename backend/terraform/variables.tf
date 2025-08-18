@@ -27,6 +27,6 @@ variable "domain_name" {
 variable "openai_api_key" {
   description = "OpenAI API Key"
   type        = string
-  default     = ""
+  default     = ""  # 実際のOpenAI APIキーを入力してください
   sensitive   = true
 } 
