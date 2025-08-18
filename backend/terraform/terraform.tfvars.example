@@ -9,7 +9,7 @@ project_name = "yarisugi-sales"
 environment = "dev"
 
 # OpenAI API Key（実際のキーに置き換えてください）
-openai_api_key = "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"
+openai_api_key = "sk-proj-your-openai-api-key-here"
 
 # ドメイン設定（本番環境用）
 domain_name = "your-domain.com"
