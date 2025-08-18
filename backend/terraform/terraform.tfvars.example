@@ -1,0 +1,15 @@
+# Terraform変数ファイル（例）
+# このファイルをコピーして terraform.tfvars として使用してください
+
+# AWSリージョン
+aws_region = "ap-northeast-1"
+
+# プロジェクト設定
+project_name = "yarisugi-sales"
+environment = "dev"
+
+# OpenAI API Key（実際のキーに置き換えてください）
+openai_api_key = "sk-proj-your-openai-api-key-here"
+
+# ドメイン設定（本番環境用）
+domain_name = "your-domain.com"
