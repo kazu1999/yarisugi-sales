@@ -145,6 +145,8 @@ const YarisugiDashboard = () => {
   console.log('🔍 YarisugiSales Render - aiGeneratedFaqs.length:', aiGeneratedFaqs.length);
   console.log('🔍 YarisugiSales Render - aiModalJustOpened:', aiModalJustOpened);
   console.log('🔍 YarisugiSales Render - showAiGenerator:', showAiGenerator);
+
+
   
   // DEBUG: AI生成FAQの状態変更をログ出力
   React.useEffect(() => {
@@ -801,7 +803,6 @@ const YarisugiDashboard = () => {
           <NavItem label="トップページ" page="top" active={activePage === 'top'} onClick={setActivePage} />
           <NavItem label="顧客一覧" page="customers" active={activePage === 'customers'} onClick={setActivePage} />
           <NavItem label="FAQ設定" page="faq" active={activePage === 'faq'} onClick={setActivePage} />
-          <NavItem label="ナレッジ検索" page="search" active={activePage === 'search'} onClick={setActivePage} />
           <NavItem label="ナレッジDB" page="database" active={activePage === 'database'} onClick={setActivePage} />
           <NavItem label="基本情報入力" page="profile" active={activePage === 'profile'} onClick={setActivePage} />
           <NavItem label="ID追加・プラン変更" page="idManage" active={activePage === 'idManage'} onClick={setActivePage} />
@@ -1863,20 +1864,9 @@ const YarisugiDashboard = () => {
             </div>
           )}
 
-          {activePage === 'search' && (
-            <div>
-              <RagSearch
-                showRagSearch={true}
-                setShowRagSearch={() => {}}
-                ragQuery={ragQuery}
-                setRagQuery={setRagQuery}
-                ragResult={ragResult}
-                setRagResult={setRagResult}
-                isSearching={isSearching}
-                performRagSearch={performRagSearch}
-              />
-            </div>
-          )}
+
+
+
 
           {activePage === 'database' && (
             <div>
@@ -3032,16 +3022,19 @@ ${selectedProcess.name}の件でご連絡させていただきました。
           )}
 
           {/* RAG検索モーダル */}
-          <RagSearch
-            showRagSearch={showRagSearch}
-            setShowRagSearch={setShowRagSearch}
-            ragQuery={ragQuery}
-            setRagQuery={setRagQuery}
-            ragResult={ragResult}
-            setRagResult={setRagResult}
-            isSearching={isSearching}
-            performRagSearch={performRagSearch}
-          />
+
+          {showRagSearch && (
+            <RagSearch
+              showRagSearch={showRagSearch}
+              setShowRagSearch={setShowRagSearch}
+              ragQuery={ragQuery}
+              setRagQuery={setRagQuery}
+              ragResult={ragResult}
+              setRagResult={setRagResult}
+              isSearching={isSearching}
+              performRagSearch={performRagSearch}
+            />
+          )}
         </div>
       </div>
     </div>

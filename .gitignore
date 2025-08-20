@@ -30,6 +30,7 @@ dist-ssr
 *.tfplan.*
 .terraform/
 .terraform.lock.hcl
+terraform.tfvars
 
 # Environment variables
 .env

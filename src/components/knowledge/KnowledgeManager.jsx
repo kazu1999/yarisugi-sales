@@ -44,6 +44,7 @@ const KnowledgeManager = ({
   handleDrop,
   resetKnowledgeForm
 }) => {
+
   // ファイル選択ハンドラー
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files);

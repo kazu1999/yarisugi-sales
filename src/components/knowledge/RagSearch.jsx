@@ -24,6 +24,7 @@ const RagSearch = ({
   // 関数
   performRagSearch
 }) => {
+
   // 検索実行
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -68,9 +69,10 @@ const RagSearch = ({
               setRagResult(null);
               setRagQuery('');
             }}
-            className="text-white hover:text-gray-200 transition-colors"
+            className="text-white hover:text-gray-200 transition-colors p-2 rounded-full hover:bg-white hover:bg-opacity-20 bg-white bg-opacity-10"
+            title="閉じる"
           >
-            <X className="w-5 h-5" />
+            <X className="w-6 h-6" />
           </button>
         </div>
 

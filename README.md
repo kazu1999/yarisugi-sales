@@ -116,6 +116,7 @@ chmod +x deploy.sh
 
 ### 3. 環境変数設定
 
+#### フロントエンド環境変数
 デプロイ完了後、出力された値を`.env`ファイルに設定：
 
 ```env
@@ -131,6 +132,15 @@ VITE_DYNAMODB_CUSTOMERS_TABLE=yarisugi-sales-customers-dev
 VITE_DYNAMODB_FAQS_TABLE=yarisugi-sales-faqs-dev
 VITE_DYNAMODB_KNOWLEDGE_TABLE=yarisugi-sales-knowledge-dev
 VITE_DYNAMODB_SALES_PROCESSES_TABLE=yarisugi-sales-sales-processes-dev
+```
+
+#### バックエンド環境変数（Terraform）
+```bash
+# terraform.tfvars.exampleをコピー
+cp backend/terraform/terraform.tfvars.example backend/terraform/terraform.tfvars
+
+# terraform.tfvarsを編集して実際の値を設定
+# 特に OpenAI API Key を設定してください
 ```
 
 ## 📁 プロジェクト構造
@@ -773,6 +783,19 @@ APIは以下のドメインからのアクセスを許可しています：
 - **API Gateway**: セキュアなAPI通信
 - **JWT認証**: 安全なトークンベース認証
 - **CORS設定**: 適切なオリジン制御
+
+### ⚠️ 重要なセキュリティ注意事項
+
+#### APIキーの管理
+- **OpenAI API Key**: `terraform.tfvars`ファイルに設定されますが、このファイルは`.gitignore`で除外されています
+- **漏洩防止**: APIキーをGitにコミットしないでください
+- **定期的な更新**: APIキーは定期的に更新することを推奨します
+
+#### 安全な設定手順
+1. `terraform.tfvars.example`をコピーして`terraform.tfvars`を作成
+2. `terraform.tfvars`に実際のAPIキーを設定
+3. `terraform.tfvars`は絶対にGitにコミットしない
+4. 新しいAPIキーを取得した場合は、既存のキーを無効化してから新しいキーを設定
 
 ## 💰 コスト
 
