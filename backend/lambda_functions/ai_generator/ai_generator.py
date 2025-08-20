@@ -32,8 +32,15 @@ def get_openai_api_key() -> str:
         # Secrets Managerから取得を試行
         if OPENAI_API_SECRET_ARN:
             response = secrets_client.get_secret_value(SecretId=OPENAI_API_SECRET_ARN)
-            secret_dict = json.loads(response['SecretString'])
-            return secret_dict['openai_api_key']
+            # Secrets Managerに直接APIキーが保存されている場合
+            if 'SecretString' in response:
+                return response['SecretString']
+            # JSON形式で保存されている場合
+            elif 'SecretBinary' in response:
+                secret_dict = json.loads(response['SecretBinary'].decode('utf-8'))
+                return secret_dict.get('openai_api_key', secret_dict.get('api_key', ''))
+            else:
+                raise ValueError("No secret value found in Secrets Manager")
         
         raise ValueError("OpenAI API key not configured in environment variables or Secrets Manager")
     except Exception as e:
