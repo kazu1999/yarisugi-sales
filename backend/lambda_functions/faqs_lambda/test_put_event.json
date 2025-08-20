@@ -1,0 +1,15 @@
+{
+  "httpMethod": "PUT",
+  "path": "/faqs/faq_20250818_151500_6876462b",
+  "pathParameters": {
+    "id": "faq_20250818_151500_6876462b"
+  },
+  "body": "{\"question\":\"Updated question\",\"answer\":\"Updated answer\",\"category\":\"Updated category\",\"tags\":[\"updated\",\"tag\"],\"isPublic\":true}",
+  "requestContext": {
+    "authorizer": {
+      "claims": {
+        "sub": "a754bad8-70f1-70b3-e92d-f1d16876462b"
+      }
+    }
+  }
+}

@@ -188,8 +188,11 @@ def update_customer(user_id, customer_id, body):
         update_expressions.append('#updatedAt = :updatedAt')
         expression_values[':updatedAt'] = datetime.utcnow().isoformat()
         
-        # 属性名マッピング
-        expression_names = {f'#{field}': field for field in updateable_fields}
+        # 属性名マッピング（実際に更新されるフィールドのみ）
+        expression_names = {}
+        for field in updateable_fields:
+            if field in customer_data:
+                expression_names[f'#{field}'] = field
         expression_names['#updatedAt'] = 'updatedAt'
         
         result = dynamodb_client.update_item(
@@ -199,7 +202,8 @@ def update_customer(user_id, customer_id, body):
                 'SK': f'CUSTOMER#{customer_id}'
             },
             'SET ' + ', '.join(update_expressions),
-            expression_values
+            expression_values,
+            expression_names
         )
         
         if result['success']:

@@ -1,0 +1,1 @@
+{"httpMethod": "POST", "body": "{\"content\":\"One time 1000 yen\",\"contentType\":\"text\",\"saveToDb\":false}", "requestContext": {"authorizer": {"claims": {"sub": "test-user-123"}}}}

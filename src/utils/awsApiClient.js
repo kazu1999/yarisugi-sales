@@ -22,6 +22,17 @@ class AwsApiClient {
 
   // APIリクエストを実行
   async request(endpoint, options = {}) {
+    // 後方互換性のため、古い形式（文字列パラメータ）もサポート
+    if (typeof options === 'string') {
+      const method = options;
+      const body = arguments[2] || null;
+      const queryParams = arguments[3] || null;
+      options = {
+        method,
+        ...(body && { body: JSON.stringify(body) }),
+        ...(queryParams && { params: queryParams })
+      };
+    }
     try {
       const token = await this.getAuthToken();
       console.log('🔑 認証トークン:', token ? '取得済み' : '未取得');
@@ -35,17 +46,20 @@ class AwsApiClient {
       };
 
       const config = {
-        method: 'GET',
+        method: options.method || 'GET',
         headers: {
           ...defaultHeaders,
           ...options.headers
         },
-        ...options
+        body: options.body
       };
 
       const url = `${this.baseUrl}${endpoint}`;
       console.log('🌐 API Request:', { url, method: config.method, hasAuth: !!token });
       console.log('🔑 Authorization Header:', token ? `Bearer ${token.substring(0, 20)}...` : 'なし');
+      if (config.body) {
+        console.log('📤 Request Body:', typeof config.body === 'string' ? config.body.substring(0, 200) + '...' : config.body);
+      }
 
       const response = await fetch(url, config);
       

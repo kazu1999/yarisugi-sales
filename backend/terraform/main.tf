@@ -125,7 +125,7 @@ resource "aws_dynamodb_table" "faqs" {
   }
 }
 
-# ナレッジベーステーブル
+# ナレッジベーステーブル（RAG対応）
 resource "aws_dynamodb_table" "knowledge" {
   name           = "${var.project_name}-knowledge-${var.environment}"
   billing_mode   = "PAY_PER_REQUEST"
@@ -140,6 +140,52 @@ resource "aws_dynamodb_table" "knowledge" {
   attribute {
     name = "SK"
     type = "S"
+  }
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  attribute {
+    name = "category"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name     = "UserIdIndex"
+    hash_key = "userId"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name     = "CategoryIndex"
+    hash_key = "category"
+    range_key = "SK"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# ベクトル埋め込み用テーブル
+resource "aws_dynamodb_table" "knowledge_vectors" {
+  name           = "${var.project_name}-knowledge-vectors-${var.environment}"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "knowledgeId"
+  range_key      = "chunkIndex"
+
+  attribute {
+    name = "knowledgeId"
+    type = "S"
+  }
+
+  attribute {
+    name = "chunkIndex"
+    type = "N"
   }
 
   attribute {
@@ -289,6 +335,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
           aws_dynamodb_table.customers.arn,
           aws_dynamodb_table.faqs.arn,
           aws_dynamodb_table.knowledge.arn,
+          aws_dynamodb_table.knowledge_vectors.arn,
           aws_dynamodb_table.sales_processes.arn
         ]
       },
@@ -986,6 +1033,7 @@ resource "aws_lambda_function" "customers_api" {
       USERS_TABLE     = aws_dynamodb_table.users.name
       FAQS_TABLE      = aws_dynamodb_table.faqs.name
       KNOWLEDGE_TABLE = aws_dynamodb_table.knowledge.name
+      KNOWLEDGE_VECTORS_TABLE = aws_dynamodb_table.knowledge_vectors.name
       SALES_PROCESSES_TABLE = aws_dynamodb_table.sales_processes.name
     }
   }
@@ -993,6 +1041,393 @@ resource "aws_lambda_function" "customers_api" {
 
 # 現在のAWSアカウントIDを取得
 data "aws_caller_identity" "current" {}
+
+# OpenAI API Key用のSecrets Manager
+resource "aws_secretsmanager_secret" "openai_api_key" {
+  name        = "${var.project_name}-openai-api-key-${var.environment}"
+  description = "OpenAI API Key for AI functions"
+  
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "openai_api_key" {
+  secret_id = aws_secretsmanager_secret.openai_api_key.id
+  secret_string = jsonencode({
+    openai_api_key = var.openai_api_key
+  })
+}
+
+# AI Lambda関数専用のIAMロール
+resource "aws_iam_role" "ai_lambda_role" {
+  name = "${var.project_name}-ai-lambda-role-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# AI Lambda関数用のIAMポリシー
+resource "aws_iam_role_policy" "ai_lambda_policy" {
+  name = "${var.project_name}-ai-lambda-policy-${var.environment}"
+  role = aws_iam_role.ai_lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = [
+          aws_dynamodb_table.faqs.arn,
+          aws_dynamodb_table.knowledge.arn,
+          aws_dynamodb_table.knowledge_vectors.arn,
+          "${aws_dynamodb_table.knowledge.arn}/index/*",
+          "${aws_dynamodb_table.knowledge_vectors.arn}/index/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = aws_secretsmanager_secret.openai_api_key.arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      }
+    ]
+  })
+}
+
+# ナレッジ管理Lambda関数
+resource "aws_lambda_function" "knowledge_manager" {
+  filename         = "lambda_functions/knowledge_manager_lambda.zip"
+  function_name    = "${var.project_name}-knowledge-manager-${var.environment}"
+  role            = aws_iam_role.ai_lambda_role.arn
+  handler         = "knowledge_manager.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 60
+  memory_size     = 512
+  source_code_hash = filebase64sha256("lambda_functions/knowledge_manager_lambda.zip")
+
+  environment {
+    variables = {
+      KNOWLEDGE_TABLE = aws_dynamodb_table.knowledge.name
+      KNOWLEDGE_VECTORS_TABLE = aws_dynamodb_table.knowledge_vectors.name
+      OPENAI_API_SECRET_ARN = aws_secretsmanager_secret.openai_api_key.arn
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# RAG検索Lambda関数
+resource "aws_lambda_function" "rag_search" {
+  filename         = "lambda_functions/rag_search_lambda.zip"
+  function_name    = "${var.project_name}-rag-search-${var.environment}"
+  role            = aws_iam_role.ai_lambda_role.arn
+  handler         = "rag_search.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 60
+  memory_size     = 512
+  source_code_hash = filebase64sha256("lambda_functions/rag_search_lambda.zip")
+
+  environment {
+    variables = {
+      KNOWLEDGE_TABLE = aws_dynamodb_table.knowledge.name
+      KNOWLEDGE_VECTORS_TABLE = aws_dynamodb_table.knowledge_vectors.name
+      OPENAI_API_SECRET_ARN = aws_secretsmanager_secret.openai_api_key.arn
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# ナレッジ管理API リソース
+resource "aws_api_gateway_resource" "knowledge" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "knowledge"
+}
+
+# 個別ナレッジエントリー用のリソース
+resource "aws_api_gateway_resource" "knowledge_item" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.knowledge.id
+  path_part   = "{knowledgeId}"
+}
+
+# RAG検索API Gateway リソース
+resource "aws_api_gateway_resource" "rag_search" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "rag-search"
+}
+
+# ナレッジ管理API メソッド
+resource "aws_api_gateway_method" "knowledge_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.knowledge.id
+  http_method   = "GET"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "knowledge_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.knowledge.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "knowledge_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.knowledge.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# 個別ナレッジエントリー削除メソッド
+resource "aws_api_gateway_method" "knowledge_delete" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.knowledge_item.id
+  http_method   = "DELETE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "knowledge_item_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.knowledge_item.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# RAG検索API メソッド
+resource "aws_api_gateway_method" "rag_search_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.rag_search.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "rag_search_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.rag_search.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# ナレッジ管理API 統合
+resource "aws_api_gateway_integration" "knowledge_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.knowledge.id
+  http_method = aws_api_gateway_method.knowledge_get.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.knowledge_manager.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "knowledge_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.knowledge.id
+  http_method = aws_api_gateway_method.knowledge_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.knowledge_manager.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "knowledge_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.knowledge.id
+  http_method = aws_api_gateway_method.knowledge_options.http_method
+
+  type = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# 個別ナレッジエントリー削除統合
+resource "aws_api_gateway_integration" "knowledge_delete" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.knowledge_item.id
+  http_method = aws_api_gateway_method.knowledge_delete.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.knowledge_manager.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "knowledge_item_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.knowledge_item.id
+  http_method = aws_api_gateway_method.knowledge_item_options.http_method
+
+  type = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# RAG検索API 統合
+resource "aws_api_gateway_integration" "rag_search_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.rag_search.id
+  http_method = aws_api_gateway_method.rag_search_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.rag_search.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "rag_search_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.rag_search.id
+  http_method = aws_api_gateway_method.rag_search_options.http_method
+
+  type = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# Lambda権限
+resource "aws_lambda_permission" "knowledge_manager" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.knowledge_manager.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*/*"
+}
+
+resource "aws_lambda_permission" "rag_search" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.rag_search.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*/*"
+}
+
+# CORS レスポンス
+resource "aws_api_gateway_method_response" "knowledge_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.knowledge.id
+  http_method = aws_api_gateway_method.knowledge_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "knowledge_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.knowledge.id
+  http_method = aws_api_gateway_method.knowledge_options.http_method
+  status_code = aws_api_gateway_method_response.knowledge_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# 個別ナレッジエントリー用CORS設定
+resource "aws_api_gateway_method_response" "knowledge_item_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.knowledge_item.id
+  http_method = aws_api_gateway_method.knowledge_item_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "knowledge_item_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.knowledge_item.id
+  http_method = aws_api_gateway_method.knowledge_item_options.http_method
+  status_code = aws_api_gateway_method_response.knowledge_item_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+resource "aws_api_gateway_method_response" "rag_search_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.rag_search.id
+  http_method = aws_api_gateway_method.rag_search_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "rag_search_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.rag_search.id
+  http_method = aws_api_gateway_method.rag_search_options.http_method
+  status_code = aws_api_gateway_method_response.rag_search_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
 
 # API Gateway Deployment
 resource "aws_api_gateway_deployment" "main" {

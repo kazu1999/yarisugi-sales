@@ -13,10 +13,32 @@ from common.dynamodb import DynamoDBClient
 # === 環境変数 ===
 FAQS_TABLE = os.environ.get('FAQS_TABLE', 'yarisugi-sales-faqs-dev')
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+OPENAI_API_SECRET_ARN = os.environ.get('OPENAI_API_SECRET_ARN', '')
 OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-4o-mini')
+
+# === Secrets Manager クライアント ===
+secrets_client = boto3.client('secretsmanager')
 
 # === DynamoDBクライアント ===
 dynamodb_client = DynamoDBClient()
+
+def get_openai_api_key() -> str:
+    """OpenAI APIキーを取得（環境変数またはSecrets Managerから）"""
+    try:
+        # まず環境変数から取得を試行
+        if OPENAI_API_KEY:
+            return OPENAI_API_KEY
+        
+        # Secrets Managerから取得を試行
+        if OPENAI_API_SECRET_ARN:
+            response = secrets_client.get_secret_value(SecretId=OPENAI_API_SECRET_ARN)
+            secret_dict = json.loads(response['SecretString'])
+            return secret_dict['openai_api_key']
+        
+        raise ValueError("OpenAI API key not configured in environment variables or Secrets Manager")
+    except Exception as e:
+        print(f"Failed to get OpenAI API key: {str(e)}")
+        raise
 
 def create_response(status_code: int, body: Dict[str, Any], extra_headers: Dict[str, str] = None) -> Dict[str, Any]:
     """CORS対応のレスポンス作成"""
@@ -62,7 +84,9 @@ def extract_text_from_pdf(pdf_content: bytes) -> str:
 
 def generate_faqs_with_openai(content: str, user_id: str) -> List[Dict[str, Any]]:
     """OpenAI APIを使用してFAQを生成"""
-    if not OPENAI_API_KEY:
+    try:
+        openai_api_key = get_openai_api_key()
+    except Exception as e:
         return [{"error": "OpenAI API key not configured"}]
     
     try:
@@ -90,7 +114,7 @@ def generate_faqs_with_openai(content: str, user_id: str) -> List[Dict[str, Any]
 """
 
         headers = {
-            'Authorization': f'Bearer {OPENAI_API_KEY}',
+            'Authorization': f'Bearer {openai_api_key}',
             'Content-Type': 'application/json'
         }
         

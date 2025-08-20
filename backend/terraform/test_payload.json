@@ -1,1 +1,1 @@
-{"body": "{\"content\": \"test content\", \"contentType\": \"text\", \"saveToDb\": false}"}
+{"httpMethod": "POST", "body": "{\"content\": \"テスト用のコンテンツです。これは簡単なテストです。\"}"}

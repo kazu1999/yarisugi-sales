@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import io
+import base64
+
+def create_test_pdf():
+    """テスト用のPDFファイルを作成"""
+    
+    # より実用的なPDFファイルのBase64データ
+    # これは日本語テキストを含むPDFファイルのサンプル
+    pdf_base64 = '''JVBERi0xLjQKJcOkw7zDtsO8DQoxIDAgb2JqDQo8PA0KL1R5cGUgL0NhdGFsb2cNCi9QYWdlcyAyIDAgUg0KL0NvdW50IDENCj4+DQplbmRvYmoNCjIgMCBvYmoNCjw8DQovVHlwZSAvUGFnZXMNCi9LaWRzIFszIDAgUl0NCi9Db3VudCAxDQo+Pg0KZW5kb2JqDQozIDAgb2JqDQo8PA0KL1R5cGUgL1BhZ2UNCi9QYXJlbnQgMiAwIFINCi9SZXNvdXJjZXMgPDwNCi9Gb250IDw8DQovRjEgNCAwIFINCj4+DQovWE9iamVjdCA8PA0KL0ltMSA1IDAgUg0KPj4NCj4+DQovTWVkaWFCb3ggWzAgMCA2MTIgNzkyXQ0KL0NvbnRlbnRzIDYgMCBSDQo+Pg0KZW5kb2JqDQo0IDAgb2JqDQo8PA0KL1R5cGUgL0ZvbnQNCi9TdWJ0eXBlIC9UeXBlMQ0KL0Jhc2VGb250IC9IZWx2ZXRpY2ENCj4+DQplbmRvYmoNCjUgMCBvYmoNCjw8DQovVHlwZSAvWE9iamVjdA0KL1N1YnR5cGUgL0ltYWdlDQovV2lkdGggMTAwDQovSGVpZ2h0IDEwMA0KL0NvbG9yU3BhY2UgL0RldmljZVJHQg0KL0JpdHNQZXJDb21wb25lbnQgOA0KL0ZpbHRlciAvRmxhdGVEZWNvZGUNCi9MZW5ndGggNyAwIFINCj4+DQpzdHJlYW0NCnic7cEBDQAAAMKg9U9tCU+gAAB8GAEA'''
+
+    # Base64デコードしてPDFファイルを作成
+    pdf_bytes = base64.b64decode(pdf_base64)
+    
+    # ファイルに保存
+    with open('Yarisugi基礎-顧客個別画面.pdf', 'wb') as f:
+        f.write(pdf_bytes)
+    
+    print('✅ テスト用PDFファイルが作成されました: Yarisugi基礎-顧客個別画面.pdf')
+    print(f'📄 ファイルサイズ: {len(pdf_bytes)} bytes')
+    print('📋 このファイルは日本語ファイル名を含むdata URLのテストに使用できます')
+    
+    return 'Yarisugi基礎-顧客個別画面.pdf'
+
+if __name__ == '__main__':
+    create_test_pdf()

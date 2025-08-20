@@ -128,7 +128,6 @@ const YarisugiDashboard = () => {
     setUploadedFiles: setKnowledgeUploadedFiles,
     fetchKnowledgeEntries,
     createKnowledgeEntry,
-    deleteKnowledgeEntry,
     performRagSearch,
     handleFileUpload: handleKnowledgeFileUpload,
     resetKnowledgeForm
@@ -1899,7 +1898,6 @@ const YarisugiDashboard = () => {
                 showRagSearch={showRagSearch}
                 setShowRagSearch={setShowRagSearch}
                 createKnowledgeEntry={createKnowledgeEntry}
-                deleteKnowledgeEntry={deleteKnowledgeEntry}
                 handleFileUpload={handleKnowledgeFileUpload}
                 resetKnowledgeForm={resetKnowledgeForm}
               />
