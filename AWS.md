@@ -7,8 +7,8 @@ Yarisugi Salesアプリケーションは、AWS上でサーバーレスアーキ
 
 ### 1. API Gateway
 **API名**: `yarisugi-sales-api-dev`  
-**API ID**: `xpx8akh2cj`  
-**ベースURL**: `https://xpx8akh2cj.execute-api.ap-northeast-1.amazonaws.com/dev`
+**API ID**: `j6vov5s543`  
+**ベースURL**: `https://j6vov5s543.execute-api.ap-northeast-1.amazonaws.com/dev`
 
 #### エンドポイント一覧
 
@@ -21,6 +21,7 @@ Yarisugi Salesアプリケーションは、AWS上でサーバーレスアーキ
 | `/faqs/{id}` | GET, PUT, DELETE | `yarisugi-faqs-api` | 個別FAQ操作 |
 | `/knowledge` | GET, POST | `knowledge-api` | ナレッジ管理 |
 | `/knowledge/{knowledgeId}` | DELETE | `knowledge-api` | 個別ナレッジ削除 |
+| `/knowledge/s3-presigned-url` | POST | `yarisugi-sales-s3-presigned-url-dev` | S3署名付きURL生成 |
 | `/ai-generate` | POST | `yarisugi-ai-generator` | AI FAQ生成 |
 | `/rag-search` | POST | `yarisugi-sales-rag-search-dev` | AI検索 |
 
@@ -38,8 +39,10 @@ Yarisugi Salesアプリケーションは、AWS上でサーバーレスアーキ
 │       └── GET, PUT, DELETE
 ├── knowledge
 │   ├── GET, POST
-│   └── {knowledgeId}
-│       └── DELETE
+│   ├── {knowledgeId}
+│   │   └── DELETE
+│   └── s3-presigned-url
+│       └── POST
 ├── ai-generate
 │   └── POST
 └── rag-search
@@ -62,16 +65,24 @@ Yarisugi Salesアプリケーションは、AWS上でサーバーレスアーキ
 - **AI統合**: OpenAI API（FAQ生成）
 
 #### ナレッジ管理 (`knowledge-api`)
-- **Runtime**: Python 3.13
+- **Runtime**: Python 3.11
 - **Handler**: `knowledge_manager.lambda_handler`
 - **機能**: ナレッジデータ管理、PDFアップロード、テキスト抽出、ベクトル化
 - **DynamoDBテーブル**: 
   - `yarisugi-sales-knowledge-dev`
   - `yarisugi-sales-knowledge-vectors-dev`
 - **AI統合**: OpenAI API（要約、埋め込み生成）
-- **メモリ**: 512MB
-- **タイムアウト**: 29秒
-- **最適化**: バッチ処理、チャンク制限
+- **メモリ**: 3008MB
+- **タイムアウト**: 900秒
+- **最適化**: バッチ処理、チャンク制限、S3統合
+
+#### S3署名付きURL生成 (`yarisugi-sales-s3-presigned-url-dev`)
+- **Runtime**: Python 3.11
+- **Handler**: `s3_presigned_url.lambda_handler`
+- **機能**: S3への直接アップロード用署名付きURL生成
+- **メモリ**: 128MB
+- **タイムアウト**: 30秒
+- **認証**: Cognito User Pools
 
 #### AI生成 (`yarisugi-ai-generator`)
 - **Runtime**: Python 3.11
@@ -99,81 +110,98 @@ Yarisugi Salesアプリケーションは、AWS上でサーバーレスアーキ
 
 #### ナレッジデータ (`yarisugi-sales-knowledge-dev`)
 - **パーティションキー**: knowledge_id
-- **用途**: ナレッジ情報、メタデータの保存
+- **用途**: ナレッジ情報の保存
 
-#### ベクトルデータ (`yarisugi-sales-knowledge-vectors-dev`)
-- **パーティションキー**: vector_id
-- **用途**: ベクトル埋め込み、検索インデックス
+#### ナレッジベクトル (`yarisugi-sales-knowledge-vectors-dev`)
+- **パーティションキー**: knowledge_id
+- **ソートキー**: chunk_index
+- **用途**: テキストチャンクのベクトル埋め込み保存
 
 #### ユーザーデータ (`yarisugi-sales-users-dev`)
-- **パーティションキー**: user_id
-- **用途**: ユーザー情報の保存
+- **パーティションキー**: PK
+- **ソートキー**: SK
+- **GSI**: EmailIndex
+- **用途**: ユーザー認証情報の保存
 
-#### 営業プロセス (`yarisugi-sales-sales-processes-dev`)
+#### セールスプロセス (`yarisugi-sales-sales-processes-dev`)
 - **パーティションキー**: process_id
-- **用途**: 営業プロセス管理
+- **用途**: セールスプロセス情報の保存
 
-### 4. AWS Secrets Manager
+### 4. S3 バケット
 
-#### OpenAI APIキー (`yarisugi-sales-openai-api-key-dev`)
-- **説明**: OpenAI API Key for AI functions
-- **使用Lambda**: 
-  - `knowledge-api`
-  - `yarisugi-ai-generator`
-  - `yarisugi-sales-rag-search-dev`
+#### ファイルアップロード (`yarisugi-sales-uploads-dev`)
+- **用途**: 大きなファイル（PDF等）のアップロード
+- **CORS設定**: フロントエンドからの直接アップロード対応
+- **バージョニング**: 有効
+- **アクセス制御**: プライベート
+- **ファイルパス**: `{user_id}/{timestamp}_{random_id}.{extension}`
 
-### 5. IAM ロール
+### 5. Cognito User Pool
+- **User Pool ID**: `ap-northeast-1_HePREiq48`
+- **Client ID**: `52r963fff4l1s8d15p641u5kq7`
+- **認証方式**: JWT
+- **用途**: フロントエンド認証
 
-#### Lambda実行ロール (`yarisugi-sales-lambda-role-dev`)
-- **アタッチ済みポリシー**:
-  - `AWSLambdaBasicExecutionRole`
-  - `SecretsManagerReadWrite`
-- **カスタムポリシー**: DynamoDB操作権限
+### 6. Secrets Manager
+- **OpenAI API Key**: `yarisugi-sales-openai-api-key-dev`
+- **用途**: AI機能用APIキーの安全な管理
 
-### 6. CORS設定
+## ファイルアップロード機能
 
-全てのエンドポイントでCORS設定が有効化されており、以下のヘッダーが設定されています：
+### 大きなファイル対応
+- **5MB以下**: 直接API Gateway経由でアップロード
+- **5MB以上**: S3直接アップロード（署名付きURL使用）
 
-```http
-Access-Control-Allow-Origin: *
-Access-Control-Allow-Methods: GET,POST,PUT,DELETE,OPTIONS
-Access-Control-Allow-Headers: Authorization,Content-Type,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-Requested-With
-Access-Control-Allow-Credentials: false
-Access-Control-Max-Age: 600
+### S3直接アップロードフロー
+1. フロントエンドが署名付きURLを要求
+2. S3署名付きURL LambdaがURL生成
+3. フロントエンドがS3に直接アップロード
+4. ナレッジ管理LambdaがS3からファイル取得・処理
+
+### セキュリティ
+- ユーザーIDベースのファイルパス分離
+- 署名付きURLの有効期限（1時間）
+- プライベートバケット設定
+
+## インフラストラクチャ管理
+
+### Terraform管理
+**重要**: 全てのAWSリソースがTerraformで管理されています。
+
+#### 管理対象リソース
+- ✅ API Gateway（全エンドポイント）
+- ✅ Lambda関数（全6個）
+- ✅ DynamoDBテーブル（全6個）
+- ✅ S3バケット（アップロード用）
+- ✅ Cognito User Pool
+- ✅ IAMロール・ポリシー
+- ✅ Secrets Manager
+- ✅ Lambda権限
+
+#### 設定ファイル
+- `backend/terraform/main.tf` - メイン設定
+- `backend/terraform/terraform.tfvars` - 環境変数（機密情報含む）
+
+#### デプロイ手順
+```bash
+cd backend/terraform
+terraform plan
+terraform apply
 ```
 
-## セキュリティ
+#### 重要事項
+- **手動でのAWSリソース変更は避けてください**
+- 全ての変更はTerraform設定ファイルで行ってください
+- 新しいリソース追加時はTerraform設定に追加してからデプロイしてください
 
-### 認証
-- **Amazon Cognito** を使用したユーザー認証
-- **JWT トークン** による API アクセス制御
-
-### 機密情報管理
-- **AWS Secrets Manager** によるAPIキーの安全な管理
-- 環境変数での直接的な機密情報保存を回避
-
-### ネットワーク
-- **HTTPS** による暗号化通信
-- **API Gateway** による統一エンドポイント
-
-## パフォーマンス最適化
-
-### ナレッジ管理
-- **バッチ処理**: OpenAI API呼び出しの最適化（64チャンクずつ処理）
-- **チャンク制限**: 最大48チャンクまでの同期処理
-- **Lambda設定**: メモリ512MB、タイムアウト29秒
-
-### データベース
-- **DynamoDB**: スケーラブルなNoSQLデータベース
-- **ベクトル検索**: 専用テーブルによる高速検索
-
-## 監視・ログ
+## ログ監視
 
 ### CloudWatch Logs
-各Lambda関数の実行ログが以下のロググループに保存されます：
+各Lambda関数のログは以下のパスで確認できます：
 - `/aws/lambda/yarisugi-customers-api`
 - `/aws/lambda/yarisugi-faqs-api`
-- `/aws/lambda/knowledge-api`
+- `/aws/lambda/yarisugi-sales-knowledge-manager-dev`
+- `/aws/lambda/yarisugi-sales-s3-presigned-url-dev`
 - `/aws/lambda/yarisugi-ai-generator`
 - `/aws/lambda/yarisugi-sales-rag-search-dev`
 
@@ -189,7 +217,7 @@ Access-Control-Max-Age: 600
 - `backend/terraform/terraform.tfvars` (機密情報含む、gitignoreに追加済み)
 
 ### Lambda デプロイ
-各Lambda関数は個別にZipファイルとしてパッケージ化され、AWS CLIでデプロイされます。
+各Lambda関数は個別にZipファイルとしてパッケージ化され、Terraformでデプロイされます。
 
 ## トラブルシューティング
 
@@ -211,8 +239,75 @@ Access-Control-Max-Age: 600
    - ファイルサイズ制限を確認
    - 文字エンコーディングを確認
 
+5. **S3アップロードエラー**
+   - CORS設定を確認
+   - IAM権限を確認
+   - 署名付きURLの有効期限を確認
+
+6. **Terraformエラー**
+   - 設定ファイルの構文を確認
+   - 既存リソースとの競合を確認
+   - 状態ファイルの整合性を確認
+
+## API URL設定について
+
+### フロントエンドでのAPI URL指定
+
+フロントエンドアプリケーションが参照するAPI GatewayのURLは、以下の順序で設定されます：
+
+#### 1. 環境変数ファイル（`.env`）
+最も重要なファイルで、実際に使用されるAPI GatewayのURLを指定します。
+
+```bash
+# .envファイル
+VITE_API_GATEWAY_ENDPOINT=https://j6vov5s543.execute-api.ap-northeast-1.amazonaws.com/dev
+```
+
+#### 2. 設定ファイル（`src/utils/awsConfig.js`）
+環境変数からAPI Gatewayのエンドポイントを読み取る設定ファイルです。
+
+```javascript
+// API Gateway設定
+apiGateway: {
+  endpoint: import.meta.env.VITE_API_GATEWAY_ENDPOINT || '',
+  region: import.meta.env.VITE_AWS_REGION || 'ap-northeast-1'
+}
+```
+
+#### 3. APIクライアント（`src/utils/awsApiClient.js`）
+実際にAPIリクエストを送信する際に使用されるファイルです。
+
+```javascript
+class AwsApiClient {
+  constructor() {
+    this.baseUrl = awsConfig.apiGateway.endpoint;
+    this.region = awsConfig.apiGateway.region;
+  }
+}
+```
+
+### 設定の優先順位
+
+1. **`.env`ファイル** - 実際の環境変数（最重要）
+2. **`src/utils/awsConfig.js`** - 環境変数を読み取る設定
+3. **`src/utils/awsApiClient.js`** - 実際のAPIリクエストで使用
+
+### 重要なポイント
+
+- 実際に使用されるのは`.env`ファイルの値です
+- 他のファイル（`README.md`、`AWS.md`、`api-specification.yaml`）はドキュメント用で、コードには影響しません
+- `.env`ファイルを更新したら、アプリケーションを再起動する必要があります
+- API Gateway IDが変更された場合は、`.env`ファイルの`VITE_API_GATEWAY_ENDPOINT`を更新してください
+
+### 設定変更時の手順
+
+1. `.env`ファイルでAPI Gateway URLを更新
+2. アプリケーションを再起動
+3. 必要に応じてドキュメント（`README.md`、`AWS.md`、`api-specification.yaml`）を更新
+
 ---
 
-**最終更新**: 2025年8月20日  
-**バージョン**: v2.7.0  
-**更新者**: AI Assistant
+**最終更新**: 2025年8月21日  
+**バージョン**: v3.0.0  
+**更新者**: AI Assistant  
+**主な変更**: S3署名付きURL機能追加、Terraform管理統合完了

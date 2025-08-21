@@ -11,8 +11,11 @@ import {
   Tag,
   X,
   MessageSquare,
-  Trash2
+  Trash2,
+  ExternalLink,
+  Download
 } from 'lucide-react';
+
 
 const KnowledgeManager = ({
   // 状態
@@ -44,6 +47,10 @@ const KnowledgeManager = ({
   handleDrop,
   resetKnowledgeForm
 }) => {
+
+  // 詳細表示用の状態
+  const [selectedEntry, setSelectedEntry] = React.useState(null);
+  const [showDetailModal, setShowDetailModal] = React.useState(false);
 
   // ファイル選択ハンドラー
   const handleFileSelect = (e) => {
@@ -85,6 +92,42 @@ const KnowledgeManager = ({
     } catch (err) {
       console.error('Error deleting knowledge entry:', err);
       alert('ナレッジエントリの削除に失敗しました');
+    }
+  };
+
+  // 詳細表示ハンドラー
+  const handleShowDetail = (entry) => {
+    setSelectedEntry(entry);
+    setShowDetailModal(true);
+  };
+
+  // 詳細モーダルを閉じる
+  const handleCloseDetail = () => {
+    setShowDetailModal(false);
+    setSelectedEntry(null);
+  };
+
+  // PDFデータURLを生成
+  const getPdfDataUrl = (content) => {
+    try {
+      // S3から取得したPDFファイルの場合は、直接S3のURLを返す
+      if (selectedEntry && selectedEntry.s3Bucket && selectedEntry.s3Key) {
+        // S3のpresigned URLを生成する必要がありますが、ここでは簡易的にBase64データを使用
+        // 実際の実装では、S3からpresigned URLを取得する必要があります
+      }
+      
+      // Base64データをデコードしてBlobを作成
+      const byteCharacters = atob(content);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      console.error('PDFデータURL生成エラー:', error);
+      return null;
     }
   };
 
@@ -231,10 +274,10 @@ const KnowledgeManager = ({
             {filteredKnowledgeEntries.map((entry) => (
               <div key={entry.knowledgeId} className="p-6 hover:bg-gray-50 transition-colors">
                 <div className="flex items-start justify-between">
-                  <div className="flex-1">
+                  <div className="flex-1 cursor-pointer" onClick={() => handleShowDetail(entry)}>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-3">
-                        <h4 className="text-lg font-semibold text-gray-900">
+                        <h4 className="text-lg font-semibold text-gray-900 hover:text-blue-600 transition-colors">
                           {entry.title}
                         </h4>
                         <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
@@ -247,9 +290,15 @@ const KnowledgeManager = ({
                             {entry.fileType}
                           </span>
                         )}
+                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">
+                          詳細を見る
+                        </span>
                       </div>
                       <button
-                        onClick={() => handleDelete(entry.knowledgeId, entry.title)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(entry.knowledgeId, entry.title);
+                        }}
                         className="text-red-600 hover:text-red-800 hover:bg-red-50 p-2 rounded-lg transition-colors"
                         title="削除"
                       >
@@ -283,6 +332,162 @@ const KnowledgeManager = ({
           </div>
         )}
       </div>
+
+      {/* ナレッジ詳細モーダル */}
+      {showDetailModal && selectedEntry && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">
+                ナレッジエントリ詳細
+              </h3>
+              <button
+                onClick={handleCloseDetail}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+              {/* ヘッダー情報 */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex-1">
+                    <h2 className="text-xl font-bold text-gray-900 mb-2">
+                      {selectedEntry.title}
+                    </h2>
+                    <div className="flex items-center gap-3 mb-3">
+                      <span className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">
+                        <Tag className="w-4 h-4" />
+                        {getCategoryLabel(selectedEntry.category)}
+                      </span>
+                      {selectedEntry.fileType && (
+                        <span className="inline-flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 text-sm rounded-full">
+                          <FileText className="w-4 h-4" />
+                          {selectedEntry.fileType}
+                        </span>
+                      )}
+                      {selectedEntry.chunkCount && (
+                        <span className="inline-flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-800 text-sm rounded-full">
+                          <Folder className="w-4 h-4" />
+                          {selectedEntry.chunkCount}チャンク
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-gray-500">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="w-4 h-4" />
+                        作成日: {new Date(selectedEntry.createdAt).toLocaleDateString('ja-JP')}
+                      </span>
+                      {selectedEntry.updatedAt && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-4 h-4" />
+                          更新日: {new Date(selectedEntry.updatedAt).toLocaleDateString('ja-JP')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 要約 */}
+              {selectedEntry.summary && (
+                <div>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-blue-600" />
+                    要約
+                  </h4>
+                  <div className="bg-blue-50 rounded-lg p-4">
+                    <p className="text-gray-700 leading-relaxed">
+                      {selectedEntry.summary}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* 内容 */}
+              <div>
+                <h4 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-green-600" />
+                  {selectedEntry.fileType === 'application/pdf' ? 'PDFファイル' : '内容'}
+                </h4>
+                
+                {selectedEntry.fileType === 'application/pdf' ? (
+                  <div className="bg-white border border-gray-200 rounded-lg p-4">
+                    <div className="text-center py-8">
+                      <div className="mb-4">
+                        <FileText className="w-16 h-16 text-gray-400 mx-auto mb-2" />
+                        <p className="text-gray-600 mb-4">
+                          PDFファイル: {selectedEntry.title}
+                        </p>
+                      </div>
+                      
+                      <div className="flex justify-center">
+                        <a
+                          href={getPdfDataUrl(selectedEntry.content)}
+                          download={selectedEntry.title || 'document.pdf'}
+                          className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          <Download className="w-5 h-5" />
+                          PDFをダウンロード
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-white border border-gray-200 rounded-lg p-4">
+                    <div className="whitespace-pre-wrap text-gray-700 leading-relaxed max-h-96 overflow-y-auto">
+                      {selectedEntry.content}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* メタデータ */}
+              <div>
+                <h4 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <ExternalLink className="w-5 h-5 text-gray-600" />
+                  メタデータ
+                </h4>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <dt className="text-sm font-medium text-gray-500">ナレッジID</dt>
+                      <dd className="text-sm text-gray-900 font-mono">{selectedEntry.knowledgeId}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-sm font-medium text-gray-500">ユーザーID</dt>
+                      <dd className="text-sm text-gray-900">{selectedEntry.userId}</dd>
+                    </div>
+                    {selectedEntry.fileName && (
+                      <div>
+                        <dt className="text-sm font-medium text-gray-500">ファイル名</dt>
+                        <dd className="text-sm text-gray-900">{selectedEntry.fileName}</dd>
+                      </div>
+                    )}
+                    {selectedEntry.fileSize && (
+                      <div>
+                        <dt className="text-sm font-medium text-gray-500">ファイルサイズ</dt>
+                        <dd className="text-sm text-gray-900">{selectedEntry.fileSize} bytes</dd>
+                      </div>
+                    )}
+                  </dl>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 p-6 border-t border-gray-200">
+              <button
+                onClick={handleCloseDetail}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ナレッジ作成モーダル */}
       {showKnowledgeForm && (

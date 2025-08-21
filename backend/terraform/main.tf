@@ -21,6 +21,69 @@ provider "aws" {
 locals {
   faqs_integration_uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.faqs_api.arn}/invocations"
   ai_generator_integration_uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.ai_generator.arn}/invocations"
+  s3_presigned_url_integration_uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.s3_presigned_url.arn}/invocations"
+}
+
+# S3バケット（ファイルアップロード用）
+resource "aws_s3_bucket" "uploads" {
+  bucket = "${var.project_name}-uploads-${var.environment}"
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# S3バケットのCORS設定
+resource "aws_s3_bucket_cors_configuration" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["GET", "PUT", "POST", "DELETE"]
+    allowed_origins = ["*"]
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3000
+  }
+}
+
+# S3バケットのバージョニング設定
+resource "aws_s3_bucket_versioning" "uploads" {
+  bucket = aws_s3_bucket.uploads.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# S3署名付きURL Lambda関数
+resource "aws_lambda_function" "s3_presigned_url" {
+  filename         = "lambda_functions/s3_presigned_url_lambda.zip"
+  function_name    = "${var.project_name}-s3-presigned-url-${var.environment}"
+  role            = aws_iam_role.ai_lambda_role.arn
+  handler         = "s3_presigned_url.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 30
+  memory_size     = 128
+
+  environment {
+    variables = {
+      ENVIRONMENT = var.environment
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# S3署名付きURL Lambdaの権限
+resource "aws_lambda_permission" "s3_presigned_url" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.s3_presigned_url.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
 }
 
 # ユーザーテーブル
@@ -249,6 +312,7 @@ resource "aws_cognito_user_pool" "main" {
     require_numbers   = true
     require_symbols   = false
     require_uppercase = false
+    temporary_password_validity_days = 7
   }
 
   auto_verified_attributes = ["email"]
@@ -282,16 +346,6 @@ resource "aws_cognito_user_pool_client" "main" {
 
   callback_urls = ["http://localhost:5173", "http://localhost:5174", "https://your-domain.com"]
   logout_urls   = ["http://localhost:5173", "http://localhost:5174", "https://your-domain.com"]
-
-  token_validity_units {
-    access_token  = "hours"
-    id_token      = "hours"
-    refresh_token = "days"
-  }
-
-  access_token_validity  = 1
-  id_token_validity      = 1
-  refresh_token_validity = 30
 }
 
 # Lambda関数用のIAMロール
@@ -1131,14 +1185,14 @@ resource "aws_iam_role_policy" "ai_lambda_policy" {
 
 # ナレッジ管理Lambda関数
 resource "aws_lambda_function" "knowledge_manager" {
-  filename         = "lambda_functions/knowledge_manager_lambda.zip"
+  filename         = "../lambda_functions/knowledge_manager/knowledge_manager_optimized.zip"
   function_name    = "${var.project_name}-knowledge-manager-${var.environment}"
   role            = aws_iam_role.ai_lambda_role.arn
   handler         = "knowledge_manager.lambda_handler"
   runtime         = "python3.11"
-  timeout         = 60
-  memory_size     = 512
-  source_code_hash = filebase64sha256("lambda_functions/knowledge_manager_lambda.zip")
+  timeout         = 900
+  memory_size     = 3008
+  source_code_hash = filebase64sha256("../lambda_functions/knowledge_manager/knowledge_manager_optimized.zip")
 
   environment {
     variables = {
@@ -1200,6 +1254,13 @@ resource "aws_api_gateway_resource" "rag_search" {
   path_part   = "rag-search"
 }
 
+# S3署名付きURLリソース（knowledge配下）
+resource "aws_api_gateway_resource" "s3_presigned_url" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.knowledge.id
+  path_part   = "s3-presigned-url"
+}
+
 # ナレッジ管理API メソッド
 resource "aws_api_gateway_method" "knowledge_get" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
@@ -1247,6 +1308,22 @@ resource "aws_api_gateway_method" "rag_search_post" {
   http_method   = "POST"
   authorization = "COGNITO_USER_POOLS"
   authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# S3署名付きURL API メソッド
+resource "aws_api_gateway_method" "s3_presigned_url_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.s3_presigned_url.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "s3_presigned_url_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.s3_presigned_url.id
+  http_method = "OPTIONS"
+  authorization = "NONE"
 }
 
 resource "aws_api_gateway_method" "rag_search_options" {
@@ -1349,6 +1426,28 @@ resource "aws_lambda_permission" "rag_search" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*/*"
 }
 
+# S3署名付きURL API インテグレーション
+resource "aws_api_gateway_integration" "s3_presigned_url_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.s3_presigned_url.id
+  http_method = aws_api_gateway_method.s3_presigned_url_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = local.s3_presigned_url_integration_uri
+}
+
+resource "aws_api_gateway_integration" "s3_presigned_url_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.s3_presigned_url.id
+  http_method = aws_api_gateway_method.s3_presigned_url_options.http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
 # CORS レスポンス
 resource "aws_api_gateway_method_response" "knowledge_options" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -1421,6 +1520,33 @@ resource "aws_api_gateway_integration_response" "rag_search_options" {
   resource_id = aws_api_gateway_resource.rag_search.id
   http_method = aws_api_gateway_method.rag_search_options.http_method
   status_code = aws_api_gateway_method_response.rag_search_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# S3署名付きURL用CORS設定
+resource "aws_api_gateway_method_response" "s3_presigned_url_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.s3_presigned_url.id
+  http_method = aws_api_gateway_method.s3_presigned_url_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "s3_presigned_url_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.s3_presigned_url.id
+  http_method = aws_api_gateway_method.s3_presigned_url_options.http_method
+  status_code = aws_api_gateway_method_response.s3_presigned_url_options.status_code
 
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"

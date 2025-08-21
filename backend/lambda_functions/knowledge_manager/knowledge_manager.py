@@ -7,6 +7,11 @@ from botocore.exceptions import ClientError
 import base64
 import os
 import requests
+import re
+from typing import List, Dict, Any, Optional
+
+# S3クライアント
+s3_client = boto3.client('s3')
 import PyPDF2
 import io
 import math
@@ -73,7 +78,6 @@ def dataurl_to_bytes(s: str) -> bytes:
             parts = s.split("base64,", 1)
             if len(parts) != 2:
                 # 念のため正規表現でもリカバリ
-                import re
                 m = re.search(r'base64,(.*)', s, flags=re.S)
                 if not m:
                     raise ValueError("Invalid data URL format")
@@ -87,6 +91,18 @@ def dataurl_to_bytes(s: str) -> bytes:
     except Exception as e:
         print(f"❌ Error in dataurl_to_bytes: {e}")
         raise
+
+def get_file_from_s3(bucket: str, key: str) -> bytes:
+    """S3からファイルを取得"""
+    try:
+        print(f"📥 S3からファイル取得開始: {bucket}/{key}")
+        response = s3_client.get_object(Bucket=bucket, Key=key)
+        file_content = response['Body'].read()
+        print(f"✅ S3からファイル取得完了: {len(file_content)} bytes")
+        return file_content
+    except Exception as e:
+        print(f"❌ S3からファイル取得エラー: {e}")
+        raise e
 
 def process_file_content(content, file_type):
     """ファイルコンテンツを処理（PDFの場合はテキスト抽出）"""
@@ -478,18 +494,34 @@ def lambda_handler(event, context):
             }
         
         # ユーザーIDを取得（Cognito経由）
-        claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
-        user_id = claims.get('sub')
-        
-        # テスト用: 認証が無い場合はテストユーザーIDを使用
-        if not user_id:
-            user_id = 'test-user-123'
-            print(f"⚠️ Using test user ID: {user_id}")
-            # return {
-            #     'statusCode': 401,
-            #     'headers': headers,
-            #     'body': json.dumps({'error': 'Unauthorized'})
-            # }
+        try:
+            print(f"🔍 イベントからユーザーID取得開始")
+            print(f"📋 イベント構造: {json.dumps(event, default=str)}")
+            
+            # Cognito認証情報からユーザーIDを取得
+            claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
+            print(f"🔑 認証クレーム: {claims}")
+            
+            user_id = claims.get('sub') or claims.get('cognito:username')
+            print(f"👤 取得されたユーザーID: {user_id}")
+            
+            # 認証なしの場合は401エラーを返す
+            if not user_id:
+                print(f"❌ No user ID found in claims: {claims}")
+                return {
+                    'statusCode': 401,
+                    'headers': headers,
+                    'body': json.dumps({'error': 'Unauthorized - No valid user ID found'})
+                }
+                
+            print(f"✅ 最終ユーザーID: {user_id}")
+        except Exception as e:
+            print(f"❌ ユーザーID取得エラー: {str(e)}")
+            return {
+                'statusCode': 401,
+                'headers': headers,
+                'body': json.dumps({'error': 'Unauthorized - Error retrieving user ID'})
+            }
         
         if http_method == 'GET':
             # ナレッジエントリを取得
@@ -514,41 +546,80 @@ def lambda_handler(event, context):
             content = body.get('content')
             category = body.get('category', 'general')
             file_type = body.get('fileType')
+            s3_bucket = body.get('s3Bucket')
+            s3_key = body.get('s3Key')
             
-            if not title or not content:
+            if not title:
                 return {
                     'statusCode': 400,
                     'headers': headers,
-                    'body': json.dumps({'error': 'Title and content are required'})
+                    'body': json.dumps({'error': 'Title is required'})
                 }
             
-            print(f"🔎 content head: {content[:40]!r}")
-            
-            # ⚠️ PDFなどバイナリはここでいじらず、process_file_content に任せる
-            if file_type and file_type.lower() == 'application/pdf':
-                processed_content = process_file_content(content, file_type)
-                if isinstance(processed_content, str) and processed_content.startswith("PDF処理エラー"):
+            # S3からのファイル取得または直接コンテンツ
+            if s3_bucket and s3_key:
+                # S3からファイルを取得
+                try:
+                    print(f"📥 S3からファイル取得: {s3_bucket}/{s3_key}")
+                    file_content = get_file_from_s3(s3_bucket, s3_key)
+                    
+                    if file_type and file_type.lower() == 'application/pdf':
+                        # PDFファイルの場合、テキスト抽出
+                        processed_content = process_file_content(file_content, file_type)
+                        if isinstance(processed_content, str) and processed_content.startswith("PDF処理エラー"):
+                            return {
+                                'statusCode': 500,
+                                'headers': headers,
+                                'body': json.dumps({'error': processed_content})
+                            }
+                        content = processed_content
+                    else:
+                        # テキストファイルの場合
+                        content = file_content.decode('utf-8', errors='ignore')
+                        
+                except Exception as e:
+                    print(f"❌ S3ファイル取得エラー: {e}")
                     return {
                         'statusCode': 500,
                         'headers': headers,
-                        'body': json.dumps({'error': processed_content})
+                        'body': json.dumps({'error': f'S3 file retrieval error: {str(e)}'})
                     }
-                content = processed_content # テキスト抽出後の内容を使用
             else:
-                # テキスト系の data URL だけをここでデコード（任意）
-                if isinstance(content, str) and content.startswith('data:'):
-                    try:
-                        header, encoded = content.split(',', 1)
-                        mime = header[5:].split(';', 1)[0].lower()  # "data:xxxx"
-                        decoded = base64.b64decode(encoded)
-                        if mime.startswith('text/') or mime in ('application/json',):
-                            content = decoded.decode('utf-8', errors='ignore')
-                        else:
-                            # 非テキストはこのAPIでは扱わない想定なのでUTF-8化せずスルーしてもOK
-                            # 必要があればここで reject する: return 400
-                            content = decoded.decode('utf-8', errors='ignore')
-                    except Exception as e:
-                        print(f"Error decoding data URL content: {e}")
+                # 直接コンテンツの場合
+                if not content:
+                    return {
+                        'statusCode': 400,
+                        'headers': headers,
+                        'body': json.dumps({'error': 'Content or S3 file information is required'})
+                    }
+                
+                print(f"🔎 content head: {content[:40]!r}")
+                
+                # ⚠️ PDFなどバイナリはここでいじらず、process_file_content に任せる
+                if file_type and file_type.lower() == 'application/pdf':
+                    processed_content = process_file_content(content, file_type)
+                    if isinstance(processed_content, str) and processed_content.startswith("PDF処理エラー"):
+                        return {
+                            'statusCode': 500,
+                            'headers': headers,
+                            'body': json.dumps({'error': processed_content})
+                        }
+                    content = processed_content # テキスト抽出後の内容を使用
+                else:
+                    # テキスト系の data URL だけをここでデコード（任意）
+                    if isinstance(content, str) and content.startswith('data:'):
+                        try:
+                            header, encoded = content.split(',', 1)
+                            mime = header[5:].split(';', 1)[0].lower()  # "data:xxxx"
+                            decoded = base64.b64decode(encoded)
+                            if mime.startswith('text/') or mime in ('application/json',):
+                                content = decoded.decode('utf-8', errors='ignore')
+                            else:
+                                # 非テキストはこのAPIでは扱わない想定なのでUTF-8化せずスルーしてもOK
+                                # 必要があればここで reject する: return 400
+                                content = decoded.decode('utf-8', errors='ignore')
+                        except Exception as e:
+                            print(f"Error decoding data URL content: {e}")
             
             knowledge_entry = create_knowledge_entry(
                 user_id=user_id,

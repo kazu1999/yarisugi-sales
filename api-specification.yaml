@@ -11,7 +11,7 @@ info:
     url: https://yarisugi-sales.com/license
 
 servers:
-  - url: https://xpx8akh2cj.execute-api.ap-northeast-1.amazonaws.com/dev
+  - url: https://j6vov5s543.execute-api.ap-northeast-1.amazonaws.com/dev
     description: 開発環境
   - url: https://api.yarisugi-sales.com/prod
     description: 本番環境

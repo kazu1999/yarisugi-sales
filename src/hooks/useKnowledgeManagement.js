@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { awsApiClient } from '../utils/awsApiClient';
+import { s3Uploader } from '../utils/s3Upload';
+import { useAuth } from '../contexts/AuthContext';
+import { getAuthToken } from '../utils/cognitoAuth';
 
 export const useKnowledgeManagement = () => {
   // 基本状態
@@ -33,6 +36,9 @@ export const useKnowledgeManagement = () => {
   // ファイルアップロード状態
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [isDragOver, setIsDragOver] = useState(false);
+
+  // 認証情報
+  const { user } = useAuth();
 
   // カテゴリオプション
   const categories = [
@@ -155,23 +161,66 @@ export const useKnowledgeManagement = () => {
     for (const file of files) {
       console.log('📄 Processing file:', file.name, 'Type:', file.type, 'Size:', file.size);
       
-      if (file.size > 10 * 1024 * 1024) { // 10MB制限
-        alert(`ファイル ${file.name} が大きすぎます（最大10MB）`);
+      // ファイルサイズ制限を100MBに拡張
+      if (file.size > 100 * 1024 * 1024) { // 100MB制限
+        alert(`ファイル ${file.name} が大きすぎます（最大100MB）`);
         continue;
       }
       
       try {
-        console.log('📖 Reading file content...');
-        const content = await readFileContent(file);
-        console.log('✅ File content read, length:', content ? content.length : 'null');
+        let knowledgeData;
         
-        const knowledgeData = {
-          title: file.name,
-          content: content,
-          category: 'general',
-          fileType: file.type
-        };
-        console.log('📋 Prepared knowledge data:', { title: knowledgeData.title, contentLength: knowledgeData.content ? knowledgeData.content.length : 'null', category: knowledgeData.category });
+        // PDFファイルまたは5MB以上のファイルはS3を使用
+        if (file.type === 'application/pdf' || file.size > 5 * 1024 * 1024) {
+          console.log('📤 PDF file or large file detected, using S3 upload...');
+          
+          // S3にアップロード
+          // 認証トークンからユーザーIDを取得
+          const token = await getAuthToken();
+          let userId = 'unknown';
+          
+          if (token) {
+            try {
+              // JWTトークンをデコードしてユーザーIDを取得
+              const payload = JSON.parse(atob(token.split('.')[1]));
+              userId = payload.sub || payload['cognito:username'] || 'unknown';
+            } catch (e) {
+              console.error('トークンデコードエラー:', e);
+            }
+          }
+          
+          console.log('👤 User ID for S3 key:', userId, 'User object:', user, 'Token available:', !!token);
+          const key = s3Uploader.generateKey(userId, file.name);
+          const uploadResult = await s3Uploader.uploadFile(file, key);
+          
+          knowledgeData = {
+            title: file.name,
+            category: 'general',
+            fileType: file.type,
+            s3Bucket: uploadResult.bucket,
+            s3Key: uploadResult.key
+          };
+        } else {
+          // テキストファイルのみ直接アップロード
+          console.log('📖 Reading text file content for direct upload...');
+          const content = await readFileContent(file);
+          
+          knowledgeData = {
+            title: file.name,
+            content: content,
+            category: 'general',
+            fileType: file.type
+          };
+        }
+        
+        console.log('📋 Prepared knowledge data:', { 
+          title: knowledgeData.title, 
+          contentLength: knowledgeData.content ? knowledgeData.content.length : 'S3 file',
+          category: knowledgeData.category,
+          s3Bucket: knowledgeData.s3Bucket,
+          s3Key: knowledgeData.s3Key,
+          fileType: knowledgeData.fileType
+        });
         
         console.log('🚀 About to create knowledge entry...');
         await createKnowledgeEntry(knowledgeData);
@@ -179,7 +228,7 @@ export const useKnowledgeManagement = () => {
         newFiles.push(file);
       } catch (err) {
         console.error('❌ Error processing file:', file.name, err);
-        alert(`ファイル ${file.name} の処理に失敗しました`);
+        alert(`ファイル ${file.name} の処理に失敗しました: ${err.message}`);
       }
     }
     

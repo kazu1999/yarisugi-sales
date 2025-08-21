@@ -124,7 +124,7 @@ chmod +x deploy.sh
 VITE_COGNITO_USER_POOL_ID=ap-northeast-1_HePREiq48
 VITE_COGNITO_CLIENT_ID=51u2578ebgtvvao9kh5ldspcol
 VITE_AWS_REGION=ap-northeast-1
-VITE_API_GATEWAY_ENDPOINT=https://xpx8akh2cj.execute-api.ap-northeast-1.amazonaws.com/dev
+VITE_API_GATEWAY_ENDPOINT=https://j6vov5s543.execute-api.ap-northeast-1.amazonaws.com/dev
 
 # DynamoDBテーブル名（オプション）
 VITE_DYNAMODB_USERS_TABLE=yarisugi-sales-users-dev
@@ -695,7 +695,16 @@ APIは以下のドメインからのアクセスを許可しています：
 
 ## 📝 最近の更新
 
-### v2.7.0 - ナレッジマネージャー最適化 ✅ **NEW!**
+### v3.0.0 - ファイルアップロード機能の改善 ✅ **NEW!**
+- ✅ **PDFファイルの統一処理**: 5MB以下でもPDFファイルはS3経由で処理
+- ✅ **PDF表示の簡素化**: PDFファイルの場合はダウンロードボタンのみ表示
+- ✅ **テキストファイル**: 手入力とテキストファイルは従来通り直接処理
+- ✅ **Lambda関数の最適化**: パッケージサイズを100MB→1.1MBに削減
+- ✅ **Terraform完全同期**: すべてのAWSリソースがTerraformで管理
+- ✅ **大きなファイル対応**: 最大100MBのファイルアップロード対応
+- ✅ **S3統合**: セキュアなファイルアップロード機能
+
+### v2.7.0 - ナレッジマネージャー最適化 ✅
 - ✅ **PDFファイル処理の最適化**: 日本語ファイル名対応とBase64デコード改善
 - ✅ **埋め込みバッチ処理**: OpenAI API呼び出しを最大64分の1に削減
 - ✅ **タイムアウト対策**: 29秒制限を回避する埋め込み数上限設定（最大48チャンク）
@@ -826,9 +835,9 @@ APIは以下のドメインからのアクセスを許可しています：
 
 **Yarisugi Sales** - 営業活動を効率化し、顧客との関係を深めるための総合営業支援システム
 
-**最新バージョン**: v2.7.0 - ナレッジマネージャー最適化完成 🎉📄
+**最新バージョン**: v3.0.0 - ファイルアップロード機能の改善完成 🎉📄
 
-## 🚀 主要な改善点（v2.7.0）
+## 🚀 主要な改善点（v3.0.0）
 
 ### 📄 PDFファイル処理の最適化
 - **日本語ファイル名対応**: `dataurl_to_bytes`関数による安全なBase64デコード
