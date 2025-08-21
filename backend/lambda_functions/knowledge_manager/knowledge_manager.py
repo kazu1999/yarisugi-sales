@@ -300,6 +300,11 @@ def create_knowledge_entry(user_id, title, content, category, file_type=None):
     max_embed_chunks = int(os.environ.get('MAX_EMBED_CHUNKS', '48'))  # まずは 48 件まで等
     embeddings = generate_embeddings(chunks, batch_size=64, max_chunks=max_embed_chunks)
     
+    # S3リンクを生成（ファイルがS3にある場合）
+    s3_link = None
+    if 's3Bucket' in event and 's3Key' in event:
+        s3_link = f"s3://{event['s3Bucket']}/{event['s3Key']}"
+    
     # メインのナレッジエントリを保存
     knowledge_item = {
         'PK': f'KNOWLEDGE#{user_id}',
@@ -307,15 +312,19 @@ def create_knowledge_entry(user_id, title, content, category, file_type=None):
         'knowledgeId': knowledge_id,
         'userId': user_id,
         'title': title,
-        'content': content,
         'summary': summary,
         'category': category,
         'fileType': file_type,
         'contentHash': content_hash,
         'chunkCount': len(chunks),
+        's3Link': s3_link,  # S3リンクを追加
         'createdAt': datetime.utcnow().isoformat(),
         'updatedAt': datetime.utcnow().isoformat()
     }
+    
+    # テキストファイルの場合はcontentも保存（S3リンクがない場合）
+    if not s3_link and content:
+        knowledge_item['content'] = content
     
     try:
         # メインテーブルに保存
@@ -470,6 +479,76 @@ def delete_knowledge_entry(user_id, knowledge_id):
         print(f"Unexpected error in delete_knowledge_entry: {e}")
         return False
 
+def generate_s3_presigned_url(bucket: str, key: str, expiration: int = 3600) -> str:
+    """S3ファイルのpresigned URLを生成"""
+    try:
+        presigned_url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': bucket, 'Key': key},
+            ExpiresIn=expiration
+        )
+        return presigned_url
+    except Exception as e:
+        print(f"Error generating presigned URL: {e}")
+        return None
+
+def get_knowledge_entry_with_s3_url(user_id, knowledge_id):
+    """ナレッジエントリを取得し、S3リンクがある場合はpresigned URLを生成"""
+    try:
+        # 両方のPK形式を試す
+        pk_formats = [
+            f'KNOWLEDGE#{user_id}',
+            f'USER#{user_id}'
+        ]
+        
+        knowledge_entry = None
+        for pk in pk_formats:
+            try:
+                response = knowledge_table.get_item(
+                    Key={
+                        'PK': pk,
+                        'SK': f'KNOWLEDGE#{knowledge_id}'
+                    }
+                )
+                if 'Item' in response:
+                    knowledge_entry = response['Item']
+                    break
+            except Exception as e:
+                print(f"Error checking PK {pk}: {e}")
+                continue
+        
+        if not knowledge_entry:
+            return None
+        
+        # S3リンクがある場合はpresigned URLを生成
+        if 's3Link' in knowledge_entry and knowledge_entry['s3Link']:
+            s3_link = knowledge_entry['s3Link']
+            # s3://bucket/key 形式から bucket と key を抽出
+            if s3_link.startswith('s3://'):
+                parts = s3_link[5:].split('/', 1)
+                if len(parts) == 2:
+                    bucket, key = parts
+                    presigned_url = generate_s3_presigned_url(bucket, key)
+                    if presigned_url:
+                        knowledge_entry['presignedUrl'] = presigned_url
+        
+        # Decimal型をfloatに変換
+        from decimal import Decimal
+        def convert_decimals(obj):
+            if isinstance(obj, list):
+                return [convert_decimals(item) for item in obj]
+            elif isinstance(obj, dict):
+                return {key: convert_decimals(value) for key, value in obj.items()}
+            elif isinstance(obj, Decimal):
+                return float(obj)
+            return obj
+        
+        return convert_decimals(knowledge_entry)
+        
+    except Exception as e:
+        print(f"Error getting knowledge entry with S3 URL: {e}")
+        return None
+
 def lambda_handler(event, context):
     """Lambda関数のメインハンドラー"""
     print(f"Event: {json.dumps(event)}")
@@ -524,19 +603,42 @@ def lambda_handler(event, context):
             }
         
         if http_method == 'GET':
-            # ナレッジエントリを取得
-            query_params = event.get('queryStringParameters') or {}
-            category = query_params.get('category')
+            # パスパラメータをチェック（個別エントリ取得か一覧取得か）
+            path_parameters = event.get('pathParameters', {})
+            knowledge_id = path_parameters.get('knowledgeId')
             
-            knowledge_entries = get_knowledge_entries(user_id, category)
-            
-            return {
-                'statusCode': 200,
-                'headers': headers,
-                'body': json.dumps({
-                    'knowledgeEntries': knowledge_entries
-                }, default=str)
-            }
+            if knowledge_id:
+                # 個別のナレッジエントリを取得（S3リンク付き）
+                knowledge_entry = get_knowledge_entry_with_s3_url(user_id, knowledge_id)
+                
+                if knowledge_entry:
+                    return {
+                        'statusCode': 200,
+                        'headers': headers,
+                        'body': json.dumps({
+                            'knowledgeEntry': knowledge_entry
+                        }, default=str)
+                    }
+                else:
+                    return {
+                        'statusCode': 404,
+                        'headers': headers,
+                        'body': json.dumps({'error': 'Knowledge entry not found'})
+                    }
+            else:
+                # ナレッジエントリ一覧を取得
+                query_params = event.get('queryStringParameters') or {}
+                category = query_params.get('category')
+                
+                knowledge_entries = get_knowledge_entries(user_id, category)
+                
+                return {
+                    'statusCode': 200,
+                    'headers': headers,
+                    'body': json.dumps({
+                        'knowledgeEntries': knowledge_entries
+                    }, default=str)
+                }
         
         elif http_method == 'POST':
             # 新しいナレッジエントリを作成

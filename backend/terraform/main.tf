@@ -1285,6 +1285,15 @@ resource "aws_api_gateway_method" "knowledge_options" {
   authorization = "NONE"
 }
 
+# 個別ナレッジエントリー取得メソッド
+resource "aws_api_gateway_method" "knowledge_item_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.knowledge_item.id
+  http_method   = "GET"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
 # 個別ナレッジエントリー削除メソッド
 resource "aws_api_gateway_method" "knowledge_delete" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
@@ -1363,6 +1372,17 @@ resource "aws_api_gateway_integration" "knowledge_options" {
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
   }
+}
+
+# 個別ナレッジエントリー取得統合
+resource "aws_api_gateway_integration" "knowledge_item_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.knowledge_item.id
+  http_method = aws_api_gateway_method.knowledge_item_get.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.knowledge_manager.arn}/invocations"
 }
 
 # 個別ナレッジエントリー削除統合

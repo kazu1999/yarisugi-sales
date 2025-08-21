@@ -96,9 +96,22 @@ const KnowledgeManager = ({
   };
 
   // 詳細表示ハンドラー
-  const handleShowDetail = (entry) => {
-    setSelectedEntry(entry);
-    setShowDetailModal(true);
+  const handleShowDetail = async (entry) => {
+    try {
+      // 個別のナレッジエントリを取得（S3リンク付き）
+      const detailedEntry = await fetchKnowledgeEntry(entry.knowledgeId);
+      if (detailedEntry) {
+        setSelectedEntry(detailedEntry);
+      } else {
+        setSelectedEntry(entry);
+      }
+      setShowDetailModal(true);
+    } catch (err) {
+      console.error('Error fetching detailed entry:', err);
+      // エラーの場合は元のエントリを使用
+      setSelectedEntry(entry);
+      setShowDetailModal(true);
+    }
   };
 
   // 詳細モーダルを閉じる
@@ -423,15 +436,27 @@ const KnowledgeManager = ({
                         </p>
                       </div>
                       
-                      <div className="flex justify-center">
-                        <a
-                          href={getPdfDataUrl(selectedEntry.content)}
-                          download={selectedEntry.title || 'document.pdf'}
-                          className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                          <Download className="w-5 h-5" />
-                          PDFをダウンロード
-                        </a>
+                      <div className="flex justify-center gap-4">
+                        {selectedEntry.presignedUrl ? (
+                          <a
+                            href={selectedEntry.presignedUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                          >
+                            <ExternalLink className="w-5 h-5" />
+                            S3で開く
+                          </a>
+                        ) : (
+                          <a
+                            href={getPdfDataUrl(selectedEntry.content)}
+                            download={selectedEntry.title || 'document.pdf'}
+                            className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                          >
+                            <Download className="w-5 h-5" />
+                            PDFをダウンロード
+                          </a>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -440,6 +465,19 @@ const KnowledgeManager = ({
                     <div className="whitespace-pre-wrap text-gray-700 leading-relaxed max-h-96 overflow-y-auto">
                       {selectedEntry.content}
                     </div>
+                    {selectedEntry.presignedUrl && (
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+                        <a
+                          href={selectedEntry.presignedUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                          S3で開く
+                        </a>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

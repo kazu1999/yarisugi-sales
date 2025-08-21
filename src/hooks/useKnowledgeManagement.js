@@ -98,6 +98,33 @@ export const useKnowledgeManagement = () => {
     }
   };
 
+  // 個別のナレッジエントリ取得（S3リンク付き）
+  const fetchKnowledgeEntry = async (knowledgeId) => {
+    if (!knowledgeId) {
+      console.error('❌ Knowledge ID is required for fetching');
+      return null;
+    }
+
+    setLoading(true);
+    setError(null);
+    
+    try {
+      console.log('📖 Fetching knowledge entry:', knowledgeId);
+      const response = await awsApiClient.request(`/knowledge/${knowledgeId}`, 'GET');
+      
+      if (response.knowledgeEntry) {
+        console.log('✅ Knowledge entry fetched successfully');
+        return response.knowledgeEntry;
+      }
+    } catch (err) {
+      console.error('❌ Error fetching knowledge entry:', err);
+      setError(err.message || 'ナレッジエントリの取得に失敗しました');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // ナレッジエントリ削除
   const deleteKnowledgeEntry = async (knowledgeId) => {
     if (!knowledgeId) {
