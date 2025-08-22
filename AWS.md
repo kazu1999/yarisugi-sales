@@ -67,7 +67,7 @@ Yarisugi Salesアプリケーションは、AWS上でサーバーレスアーキ
 #### ナレッジ管理 (`knowledge-api`)
 - **Runtime**: Python 3.11
 - **Handler**: `knowledge_manager.lambda_handler`
-- **機能**: ナレッジデータ管理、PDFアップロード、テキスト抽出、ベクトル化
+- **機能**: ナレッジデータ管理、PDFアップロード、テキスト抽出、ベクトル化、自動削除
 - **DynamoDBテーブル**: 
   - `yarisugi-sales-knowledge-dev`
   - `yarisugi-sales-knowledge-vectors-dev`
@@ -75,6 +75,7 @@ Yarisugi Salesアプリケーションは、AWS上でサーバーレスアーキ
 - **メモリ**: 3008MB
 - **タイムアウト**: 900秒
 - **最適化**: バッチ処理、チャンク制限、S3統合
+- **削除機能**: ナレッジエントリ削除時にベクトルも自動削除（BatchWriteItem）
 
 #### S3署名付きURL生成 (`yarisugi-sales-s3-presigned-url-dev`)
 - **Runtime**: Python 3.11
@@ -146,6 +147,21 @@ Yarisugi Salesアプリケーションは、AWS上でサーバーレスアーキ
 - **OpenAI API Key**: `yarisugi-sales-openai-api-key-dev`
 - **用途**: AI機能用APIキーの安全な管理
 
+### 7. IAMロール・ポリシー
+
+#### AI Lambda関数用IAMロール (`yarisugi-sales-ai-lambda-role-dev`)
+- **用途**: ナレッジ管理、AI生成、RAG検索Lambda関数の実行権限
+- **DynamoDB権限**: 
+  - `GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`
+  - `BatchWriteItem`（ベクトル削除用）
+  - `Query`, `Scan`
+- **対象テーブル**: 
+  - `yarisugi-sales-knowledge-dev`
+  - `yarisugi-sales-knowledge-vectors-dev`
+  - `yarisugi-sales-faqs-dev`
+- **Secrets Manager権限**: `GetSecretValue`（OpenAI API Key取得）
+- **CloudWatch Logs権限**: ログ出力用
+
 ## ファイルアップロード機能
 
 ### 大きなファイル対応
@@ -162,6 +178,26 @@ Yarisugi Salesアプリケーションは、AWS上でサーバーレスアーキ
 - ユーザーIDベースのファイルパス分離
 - 署名付きURLの有効期限（1時間）
 - プライベートバケット設定
+
+## ナレッジ削除機能
+
+### 自動削除機能
+- **ナレッジエントリ削除**: メインのナレッジデータを削除
+- **ベクトル自動削除**: 対応するベクトルデータも自動削除
+- **バッチ処理**: `BatchWriteItem`による効率的な削除
+- **エラーハンドリング**: 削除失敗時の詳細ログ出力
+
+### 削除フロー
+1. ナレッジエントリの存在確認
+2. メインのナレッジデータを削除
+3. 対応するベクトルデータを検索
+4. `BatchWriteItem`でベクトルを一括削除
+5. 削除結果をログ出力
+
+### IAM権限要件
+- **BatchWriteItem**: ベクトルテーブルからの一括削除に必要
+- **DeleteItem**: メインのナレッジデータ削除に必要
+- **Query**: 削除対象のベクトル検索に必要
 
 ## インフラストラクチャ管理
 
@@ -307,7 +343,7 @@ class AwsApiClient {
 
 ---
 
-**最終更新**: 2025年8月21日  
-**バージョン**: v3.0.0  
+**最終更新**: 2025年8月22日  
+**バージョン**: v3.1.0  
 **更新者**: AI Assistant  
-**主な変更**: S3署名付きURL機能追加、Terraform管理統合完了
+**主な変更**: ナレッジ削除機能のベクトル自動削除対応、IAM権限最適化完了

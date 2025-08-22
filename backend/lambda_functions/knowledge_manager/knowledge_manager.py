@@ -9,6 +9,7 @@ import os
 import requests
 import re
 from typing import List, Dict, Any, Optional
+from boto3.dynamodb.conditions import Key, Attr
 
 # S3クライアント
 s3_client = boto3.client('s3')
@@ -25,45 +26,84 @@ vectors_table = dynamodb.Table(os.environ['KNOWLEDGE_VECTORS_TABLE'])
 # OpenAI設定
 secrets_client = boto3.client('secretsmanager')
 
+def get_user_id_from_event(event):
+    """イベントからユーザーIDを取得"""
+    try:
+        # Cognito認証情報からユーザーIDを取得
+        claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
+        print(f"🔑 認証クレーム: {claims}")
+        
+        user_id = claims.get('sub') or claims.get('cognito:username')
+        print(f"👤 取得されたユーザーID: {user_id}")
+        
+        # 認証なしの場合はNoneを返す
+        if not user_id:
+            print(f"❌ No user ID found in claims: {claims}")
+            return None
+            
+        return user_id
+    except Exception as e:
+        print(f"❌ ユーザーID取得エラー: {str(e)}")
+        return None
+
 def extract_text_from_pdf(pdf_bytes):
     """PDFファイルからテキストを抽出（PyPDF2を使用）"""
     try:
+        print(f"🔍 PDF処理開始: {len(pdf_bytes)} bytes")
+        print(f"🔍 PDFヘッダー: {pdf_bytes[:10]}")
+        
         pdf_file = io.BytesIO(pdf_bytes)
         pdf_reader = PyPDF2.PdfReader(pdf_file)
+        
+        print(f"📄 PDFページ数: {len(pdf_reader.pages)}")
         
         text = ""
         for page_num, page in enumerate(pdf_reader.pages):
             try:
+                print(f"🔍 Page {page_num + 1} 処理開始")
                 page_text = page.extract_text()
+                print(f"🔍 Page {page_num + 1} 生テキスト型: {type(page_text)}")
+                print(f"🔍 Page {page_num + 1} 生テキスト長: {len(page_text) if page_text else 0}")
+                
                 if page_text:
                     # エンコーディングエラーを回避するため、エラーを無視してデコード
                     if isinstance(page_text, bytes):
+                        print(f"🔍 Page {page_num + 1} バイトデータ検出")
                         # 複数のエンコーディングを試行
                         for encoding in ['utf-8', 'shift_jis', 'euc-jp', 'iso-2022-jp']:
                             try:
                                 page_text = page_text.decode(encoding, errors='ignore')
+                                print(f"🔍 Page {page_num + 1} {encoding}でデコード成功")
                                 break
                             except UnicodeDecodeError:
                                 continue
                         else:
                             # すべてのエンコーディングが失敗した場合
                             page_text = page_text.decode('utf-8', errors='ignore')
+                            print(f"🔍 Page {page_num + 1} フォールバックデコード使用")
                     elif isinstance(page_text, str):
                         # 文字列の場合はそのまま使用
+                        print(f"🔍 Page {page_num + 1} 文字列データ検出")
                         pass
                     else:
                         page_text = str(page_text)
+                        print(f"🔍 Page {page_num + 1} その他の型を文字列に変換")
                     
                     text += page_text + "\n"
                     print(f"📄 Page {page_num + 1}: Extracted {len(page_text)} characters")
+                    print(f"📄 Page {page_num + 1}: 最初の100文字: {page_text[:100]}")
+                else:
+                    print(f"⚠️ Page {page_num + 1}: テキストが空")
             except Exception as e:
                 print(f"⚠️ Error extracting text from page {page_num + 1}: {e}")
                 continue
         
         if not text.strip():
+            print("❌ 抽出されたテキストが空")
             return "PDFからテキストを抽出できませんでした。画像のみのPDFの可能性があります。"
         
         print(f"📄 Total extracted {len(text)} characters from PDF")
+        print(f"📄 抽出テキストの最初の200文字: {text[:200]}")
         return text.strip()
     except Exception as e:
         print(f"❌ Error extracting text from PDF: {e}")
@@ -180,7 +220,9 @@ def chunk_text(text, chunk_size=2000, overlap=100):
         chunks.append(chunk)
         start = end - overlap if end < len(text) else end
     
-    print(f"📄 Split text into {len(chunks)} chunks (max {chunk_size} chars each)")
+    # 末尾: 空白だけのチャンクを除外
+    chunks = [c for c in chunks if c and c.strip()]
+    print(f"📄 Split text into {len(chunks)} non-empty chunks (max {chunk_size} chars each)")
     return chunks
 
 def generate_embeddings(text_chunks, batch_size=64, max_chunks=None):
@@ -201,6 +243,12 @@ def generate_embeddings(text_chunks, batch_size=64, max_chunks=None):
         'Authorization': f'Bearer {api_key}',
         'Content-Type': 'application/json'
     }
+    
+    # 送信前の二重防御
+    text_chunks = [t for t in text_chunks if t and t.strip()]
+    if not text_chunks:
+        print("⚠️ No non-empty chunks to embed; skipping embeddings.")
+        return []
     
     # バッチ送信：input に配列を渡す
     for start in range(0, len(text_chunks), batch_size):
@@ -240,9 +288,16 @@ def summarize_content(content):
     try:
         # コンテンツが長すぎる場合は最初の部分のみを使用
         max_content_length = 3000  # トークン制限を考慮して短縮
+        print(f"🔍 summarize_content - 元のcontent長: {len(content)}")
+        print(f"🔍 summarize_content - 元のcontent内容（最初の200文字）: {content[:200]}")
+        
         content_to_summarize = content[:max_content_length]
+        print(f"🔍 summarize_content - content_to_summarize長: {len(content_to_summarize)}")
+        print(f"🔍 summarize_content - content_to_summarize内容（最初の200文字）: {content_to_summarize[:200]}")
+        
         if len(content) > max_content_length:
             content_to_summarize += "\n\n... (内容が長いため省略)"
+            print(f"🔍 summarize_content - 長いコンテンツのため省略処理を実行")
         
         headers = {
             'Authorization': f'Bearer {api_key}',
@@ -285,10 +340,37 @@ def summarize_content(content):
         print(f"❌ Exception generating summary: {str(e)}")
         return f"【要約エラー】\n• ファイル内容: {len(content)}文字\n• 例外エラー: {str(e)}"
 
-def create_knowledge_entry(user_id, title, content, category, file_type=None):
+def create_knowledge_entry(user_id, title, content, category, file_type=None, s3_bucket=None, s3_key=None):
     """ナレッジエントリを作成"""
+    print(f"🚀 create_knowledge_entry start "
+          f"(user_id={user_id}, title={title!r}, category={category!r}, "
+          f"file_type={file_type!r}, s3_bucket={s3_bucket!r}, s3_key={s3_key!r}, "
+          f"content_len={len(content) if content else 0})")
+    
     knowledge_id = str(uuid.uuid4())
+    
+    # コンテンツソースを決定
+    print("🧭 decide content source ...")
+    if s3_bucket and s3_key and (file_type or '').lower() == 'application/pdf':
+        print(f"📄 S3→PDF抽出ルート: {s3_bucket}/{s3_key}")
+        try:
+            pdf_bytes = get_file_from_s3(s3_bucket, s3_key)
+            print(f"📄 S3からPDF取得完了: {len(pdf_bytes)} bytes")
+            extracted_text = extract_text_from_pdf(pdf_bytes)
+            print(f"📄 PDFテキスト抽出完了: {len(extracted_text)} characters")
+            content = extracted_text or ""
+        except Exception as e:
+            print(f"❌ S3/PDF抽出失敗: {e}")
+            content = f"PDF処理エラー: {str(e)}"
+    else:
+        # テキスト直登録
+        content = (content or "").strip()
+        if not content:
+            raise ValueError("Empty content is not allowed for non-PDF entries")
+        print(f"📄 テキスト直登録ルート: content_len={len(content)}")
+    
     content_hash = hashlib.md5(content.encode()).hexdigest()
+    print(f"📄 content_len={len(content)}, contentHash={content_hash}")
     
     # コンテンツの要約を生成
     summary = summarize_content(content)
@@ -302,8 +384,8 @@ def create_knowledge_entry(user_id, title, content, category, file_type=None):
     
     # S3リンクを生成（ファイルがS3にある場合）
     s3_link = None
-    if 's3Bucket' in event and 's3Key' in event:
-        s3_link = f"s3://{event['s3Bucket']}/{event['s3Key']}"
+    if s3_bucket and s3_key:
+        s3_link = f"s3://{s3_bucket}/{s3_key}"
     
     # メインのナレッジエントリを保存
     knowledge_item = {
@@ -352,26 +434,65 @@ def create_knowledge_entry(user_id, title, content, category, file_type=None):
 def get_knowledge_entries(user_id, category=None):
     """ユーザーのナレッジエントリを取得"""
     try:
-        if category:
-            response = knowledge_table.query(
-                IndexName='CategoryIndex',
-                KeyConditionExpression='category = :cat',
-                FilterExpression='userId = :uid',
-                ExpressionAttributeValues={
-                    ':cat': category,
-                    ':uid': user_id
-                }
-            )
-        else:
-            response = knowledge_table.query(
-                IndexName='UserIdIndex',
-                KeyConditionExpression='userId = :uid',
-                ExpressionAttributeValues={
-                    ':uid': user_id
-                }
-            )
+        print(f"🔍 Getting knowledge entries for user: {user_id}, category: {category}")
+        print(f"🔍 User ID type: {type(user_id)}, value: '{user_id}'")
         
-        items = response.get('Items', [])
+        if category:
+            print(f"📋 Using CategoryIndex for category: {category}")
+            try:
+                response = knowledge_table.query(
+                    IndexName='CategoryIndex',
+                    KeyConditionExpression=Key('category').eq(category),
+                    FilterExpression=Attr('userId').eq(user_id),
+                )
+                print(f"✅ CategoryIndex query successful: {response}")
+            except Exception as cat_error:
+                print(f"❌ CategoryIndex query failed: {cat_error}")
+                return []
+        else:
+            print(f"📋 Using UserIdIndex for user: {user_id}")
+            try:
+                response = knowledge_table.query(
+                    IndexName='UserIdIndex',
+                    KeyConditionExpression=Key('userId').eq(user_id),
+                )
+                print(f"✅ UserIdIndex query successful: {response}")
+            except Exception as index_error:
+                print(f"⚠️ UserIdIndex query failed: {index_error}")
+                print("🔄 Falling back to scan with filter...")
+                try:
+                    # フォールバック: スキャンしてフィルタ
+                    response = knowledge_table.scan(
+                        FilterExpression=Attr('userId').eq(user_id)
+                    )
+                    print(f"✅ Scan fallback successful: {response}")
+                except Exception as scan_error:
+                    print(f"❌ Scan fallback also failed: {scan_error}")
+                    return []
+        
+        print(f"📊 DynamoDB response type: {type(response)}")
+        print(f"📊 DynamoDB response: {response}")
+        
+        if response is None:
+            print("❌ DynamoDB response is None")
+            return []
+        
+        try:
+            items = response.get('Items', [])
+            print(f"📦 Items extracted successfully: {len(items)} items")
+        except AttributeError as e:
+            print(f"❌ Error accessing response.get(): {e}")
+            print(f"📊 Response type: {type(response)}")
+            print(f"📊 Response content: {response}")
+            return []
+        except Exception as e:
+            print(f"❌ Unexpected error accessing response.get(): {e}")
+            print(f"📊 Response type: {type(response)}")
+            print(f"📊 Response content: {response}")
+            return []
+        
+        print(f"📦 Found {len(items)} items")
+        
         # Decimal型をfloatに変換してJSONシリアライゼーション可能にする
         import json
         from decimal import Decimal
@@ -391,14 +512,22 @@ def get_knowledge_entries(user_id, category=None):
                 return float(obj)
             return obj
         
-        converted_items = convert_decimals(items)
-        print(f"Converted {len(converted_items)} knowledge entries")
-        return converted_items
+        try:
+            converted_items = convert_decimals(items)
+            print(f"✅ Converted {len(converted_items)} knowledge entries")
+            return converted_items
+        except Exception as convert_error:
+            print(f"❌ Error converting decimals: {convert_error}")
+            return []
+            
     except ClientError as e:
-        print(f"Error getting knowledge entries: {e}")
+        print(f"❌ ClientError in get_knowledge_entries: {e}")
         return []
     except Exception as e:
-        print(f"Unexpected error in get_knowledge_entries: {e}")
+        print(f"❌ Unexpected error in get_knowledge_entries: {e}")
+        print(f"❌ Error type: {type(e)}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
         return []
 
 def delete_knowledge_entry(user_id, knowledge_id):
@@ -448,23 +577,16 @@ def delete_knowledge_entry(user_id, knowledge_id):
         
         # ベクトルテーブルから関連するチャンクを削除
         try:
-            # ベクトルテーブルから該当するknowledgeIdのアイテムを削除
-            scan_response = vectors_table.scan(
-                FilterExpression='knowledgeId = :kid',
-                ExpressionAttributeValues={
-                    ':kid': knowledge_id
-                }
+            # PK=knowledgeId, SK=chunkIndex の想定なら query + batch_writer が速い
+            resp = vectors_table.query(
+                KeyConditionExpression=Key('knowledgeId').eq(knowledge_id)
             )
-            
-            for item in scan_response.get('Items', []):
-                vectors_table.delete_item(
-                    Key={
-                        'knowledgeId': item['knowledgeId'],
-                        'chunkIndex': item['chunkIndex']
-                    }
-                )
-            
-            print(f"Deleted {len(scan_response.get('Items', []))} vector chunks")
+            deleted = 0
+            with vectors_table.batch_writer() as batch:
+                for item in resp.get('Items', []):
+                    batch.delete_item(Key={'knowledgeId': item['knowledgeId'], 'chunkIndex': item['chunkIndex']})
+                    deleted += 1
+            print(f"Deleted {deleted} vector chunks")
             
         except Exception as e:
             print(f"Warning: Error deleting vector chunks: {e}")
@@ -551,60 +673,42 @@ def get_knowledge_entry_with_s3_url(user_id, knowledge_id):
 
 def lambda_handler(event, context):
     """Lambda関数のメインハンドラー"""
-    print(f"Event: {json.dumps(event)}")
+    print(f"🔍 イベントからユーザーID取得開始")
+    print(f"📋 イベント構造: {json.dumps(event, default=str)}")
     
-    # CORS headers
+    # CORSヘッダー
     headers = {
-        'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization',
         'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
     }
     
+    # 認証チェック
     try:
-        http_method = event['httpMethod']
-        
-        # OPTIONSリクエスト（CORS preflight）
-        if http_method == 'OPTIONS':
-            return {
-                'statusCode': 200,
-                'headers': headers,
-                'body': json.dumps({'message': 'CORS preflight response'})
-            }
-        
-        # ユーザーIDを取得（Cognito経由）
-        try:
-            print(f"🔍 イベントからユーザーID取得開始")
-            print(f"📋 イベント構造: {json.dumps(event, default=str)}")
-            
-            # Cognito認証情報からユーザーIDを取得
-            claims = event.get('requestContext', {}).get('authorizer', {}).get('claims', {})
-            print(f"🔑 認証クレーム: {claims}")
-            
-            user_id = claims.get('sub') or claims.get('cognito:username')
-            print(f"👤 取得されたユーザーID: {user_id}")
-            
-            # 認証なしの場合は401エラーを返す
-            if not user_id:
-                print(f"❌ No user ID found in claims: {claims}")
-                return {
-                    'statusCode': 401,
-                    'headers': headers,
-                    'body': json.dumps({'error': 'Unauthorized - No valid user ID found'})
-                }
-                
-            print(f"✅ 最終ユーザーID: {user_id}")
-        except Exception as e:
-            print(f"❌ ユーザーID取得エラー: {str(e)}")
+        user_id = get_user_id_from_event(event)
+        if not user_id:
             return {
                 'statusCode': 401,
                 'headers': headers,
-                'body': json.dumps({'error': 'Unauthorized - Error retrieving user ID'})
+                'body': json.dumps({'error': 'Unauthorized - user_id not found'})
             }
-        
+        print(f"✅ 最終ユーザーID: {user_id}")
+    except Exception as e:
+        print(f"Error: {e}")
+        return {
+            'statusCode': 500,
+            'headers': headers,
+            'body': json.dumps({'error': str(e)})
+        }
+    
+    # HTTPメソッドとパスを取得
+    http_method = event.get('httpMethod', 'GET')
+    resource = event.get('resource', '')
+    
+    try:
         if http_method == 'GET':
             # パスパラメータをチェック（個別エントリ取得か一覧取得か）
-            path_parameters = event.get('pathParameters', {})
+            path_parameters = event.get('pathParameters') or {}
             knowledge_id = path_parameters.get('knowledgeId')
             
             if knowledge_id:
@@ -641,15 +745,34 @@ def lambda_handler(event, context):
                 }
         
         elif http_method == 'POST':
-            # 新しいナレッジエントリを作成
+            # ナレッジエントリを作成
+            print(f"🔍 POST処理開始")
             body = json.loads(event.get('body', '{}'))
-            
-            title = body.get('title')
-            content = body.get('content')
+            print(f"🔍 POST body: {body}")
+            title = body.get('title', '')
+            content = body.get('content')  # 空文字とNoneを区別したいのでデフォルト付けない
             category = body.get('category', 'general')
-            file_type = body.get('fileType')
+            file_type = (body.get('fileType') or '').lower()
             s3_bucket = body.get('s3Bucket')
             s3_key = body.get('s3Key')
+            
+            print(f"🔍 POST処理 - title: {title}")
+            print(f"🔍 POST処理 - content length: {len(content) if content else 0}")
+            print(f"🔍 POST処理 - category: {category}")
+            print(f"🔍 POST処理 - file_type: {file_type}")
+            print(f"🔍 POST処理 - s3_bucket: {s3_bucket}")
+            print(f"🔍 POST処理 - s3_key: {s3_key}")
+            
+            # サニタイズされたペイロードをログ出力
+            print("📝 POST payload (sanitized):",
+                  json.dumps({
+                      "title": title,
+                      "hasContent": bool(content and content.strip()),
+                      "category": category,
+                      "fileType": file_type,
+                      "s3Bucket": bool(s3_bucket),
+                      "s3Key": bool(s3_key),
+                  }, ensure_ascii=False))
             
             if not title:
                 return {
@@ -658,77 +781,34 @@ def lambda_handler(event, context):
                     'body': json.dumps({'error': 'Title is required'})
                 }
             
-            # S3からのファイル取得または直接コンテンツ
-            if s3_bucket and s3_key:
-                # S3からファイルを取得
-                try:
-                    print(f"📥 S3からファイル取得: {s3_bucket}/{s3_key}")
-                    file_content = get_file_from_s3(s3_bucket, s3_key)
-                    
-                    if file_type and file_type.lower() == 'application/pdf':
-                        # PDFファイルの場合、テキスト抽出
-                        processed_content = process_file_content(file_content, file_type)
-                        if isinstance(processed_content, str) and processed_content.startswith("PDF処理エラー"):
-                            return {
-                                'statusCode': 500,
-                                'headers': headers,
-                                'body': json.dumps({'error': processed_content})
-                            }
-                        content = processed_content
-                    else:
-                        # テキストファイルの場合
-                        content = file_content.decode('utf-8', errors='ignore')
-                        
-                except Exception as e:
-                    print(f"❌ S3ファイル取得エラー: {e}")
-                    return {
-                        'statusCode': 500,
-                        'headers': headers,
-                        'body': json.dumps({'error': f'S3 file retrieval error: {str(e)}'})
-                    }
-            else:
-                # 直接コンテンツの場合
-                if not content:
+            is_pdf = (file_type == 'application/pdf')
+            has_s3 = bool(s3_bucket and s3_key)
+            
+            # PDFアップロードルートの必須チェック
+            if is_pdf and not has_s3:
+                return {
+                    'statusCode': 400,
+                    'headers': headers,
+                    'body': json.dumps({'error': 'fileType=application/pdf の場合は s3Bucket と s3Key が必須です'})
+                }
+            
+            # テキスト直登録ルートの必須チェック
+            if not is_pdf:
+                if not (content and content.strip()):
                     return {
                         'statusCode': 400,
                         'headers': headers,
-                        'body': json.dumps({'error': 'Content or S3 file information is required'})
+                        'body': json.dumps({'error': 'content is required for non-PDF entries'})
                     }
-                
-                print(f"🔎 content head: {content[:40]!r}")
-                
-                # ⚠️ PDFなどバイナリはここでいじらず、process_file_content に任せる
-                if file_type and file_type.lower() == 'application/pdf':
-                    processed_content = process_file_content(content, file_type)
-                    if isinstance(processed_content, str) and processed_content.startswith("PDF処理エラー"):
-                        return {
-                            'statusCode': 500,
-                            'headers': headers,
-                            'body': json.dumps({'error': processed_content})
-                        }
-                    content = processed_content # テキスト抽出後の内容を使用
-                else:
-                    # テキスト系の data URL だけをここでデコード（任意）
-                    if isinstance(content, str) and content.startswith('data:'):
-                        try:
-                            header, encoded = content.split(',', 1)
-                            mime = header[5:].split(';', 1)[0].lower()  # "data:xxxx"
-                            decoded = base64.b64decode(encoded)
-                            if mime.startswith('text/') or mime in ('application/json',):
-                                content = decoded.decode('utf-8', errors='ignore')
-                            else:
-                                # 非テキストはこのAPIでは扱わない想定なのでUTF-8化せずスルーしてもOK
-                                # 必要があればここで reject する: return 400
-                                content = decoded.decode('utf-8', errors='ignore')
-                        except Exception as e:
-                            print(f"Error decoding data URL content: {e}")
             
             knowledge_entry = create_knowledge_entry(
                 user_id=user_id,
                 title=title,
-                content=content,
+                content=content or "",  # Noneでも関数内で扱えるように
                 category=category,
-                file_type=file_type
+                file_type=file_type or None,
+                s3_bucket=s3_bucket,
+                s3_key=s3_key
             )
             
             return {
@@ -737,12 +817,12 @@ def lambda_handler(event, context):
                 'body': json.dumps({
                     'message': 'Knowledge entry created successfully',
                     'knowledgeEntry': knowledge_entry
-                })
+                }, default=str)
             }
         
         elif http_method == 'DELETE':
             # ナレッジエントリを削除
-            path_parameters = event.get('pathParameters', {})
+            path_parameters = event.get('pathParameters') or {}
             knowledge_id = path_parameters.get('knowledgeId')
             
             if not knowledge_id:
@@ -758,9 +838,7 @@ def lambda_handler(event, context):
                 return {
                     'statusCode': 200,
                     'headers': headers,
-                    'body': json.dumps({
-                        'message': 'Knowledge entry deleted successfully'
-                    })
+                    'body': json.dumps({'message': 'Knowledge entry deleted successfully'})
                 }
             else:
                 return {
@@ -777,7 +855,7 @@ def lambda_handler(event, context):
             }
     
     except Exception as e:
-        print(f"Error: {str(e)}")
+        print(f"Error in lambda_handler: {e}")
         return {
             'statusCode': 500,
             'headers': headers,

@@ -409,6 +409,7 @@ export const useKnowledgeManagement = () => {
     
     // 関数
     fetchKnowledgeEntries,
+    fetchKnowledgeEntry,
     createKnowledgeEntry,
     deleteKnowledgeEntry, // 追加
     performRagSearch,

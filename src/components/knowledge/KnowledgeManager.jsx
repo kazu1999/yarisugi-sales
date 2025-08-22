@@ -39,6 +39,7 @@ const KnowledgeManager = ({
   isDragOver,
   
   // 関数
+  fetchKnowledgeEntry,
   createKnowledgeEntry,
   deleteKnowledgeEntry,
   handleFileUpload,
@@ -123,10 +124,15 @@ const KnowledgeManager = ({
   // PDFデータURLを生成
   const getPdfDataUrl = (content) => {
     try {
-      // S3から取得したPDFファイルの場合は、直接S3のURLを返す
-      if (selectedEntry && selectedEntry.s3Bucket && selectedEntry.s3Key) {
-        // S3のpresigned URLを生成する必要がありますが、ここでは簡易的にBase64データを使用
-        // 実際の実装では、S3からpresigned URLを取得する必要があります
+      // S3から取得したPDFファイルの場合は、presigned URLを使用
+      if (selectedEntry && selectedEntry.presignedUrl) {
+        return selectedEntry.presignedUrl;
+      }
+      
+      // Base64データがない場合はnullを返す
+      if (!content || typeof content !== 'string') {
+        console.log('📄 No PDF content available');
+        return null;
       }
       
       // Base64データをデコードしてBlobを作成

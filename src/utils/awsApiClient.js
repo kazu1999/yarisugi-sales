@@ -42,7 +42,7 @@ class AwsApiClient {
       
       const defaultHeaders = {
         'Content-Type': 'application/json',
-        ...(token && { 'Authorization': `Bearer ${token}` })
+        ...(token && { 'Authorization': token })
       };
 
       const config = {
@@ -56,7 +56,7 @@ class AwsApiClient {
 
       const url = `${this.baseUrl}${endpoint}`;
       console.log('🌐 API Request:', { url, method: config.method, hasAuth: !!token });
-      console.log('🔑 Authorization Header:', token ? `Bearer ${token.substring(0, 20)}...` : 'なし');
+      console.log('🔑 Authorization Header:', token ? `${token.substring(0, 20)}...` : 'なし');
       if (config.body) {
         console.log('📤 Request Body:', typeof config.body === 'string' ? config.body.substring(0, 200) + '...' : config.body);
       }
