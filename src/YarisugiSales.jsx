@@ -141,6 +141,92 @@ const YarisugiDashboard = () => {
   const [showAddDatabase, setShowAddDatabase] = useState(false);
   const [aiModalJustOpened, setAiModalJustOpened] = useState(false);
   
+  // AIファイルアップロード用の状態
+  const [aiUploadedFile, setAiUploadedFile] = useState(null);
+  const [aiFileContent, setAiFileContent] = useState('');
+  const [aiFileProcessing, setAiFileProcessing] = useState(false);
+
+  // AIファイルアップロード処理関数
+  const handleAiFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // ファイルサイズチェック（10MB制限）
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      alert('ファイルサイズが大きすぎます。10MB以下のファイルを選択してください。');
+      return;
+    }
+
+    setAiFileProcessing(true);
+    setAiUploadedFile(file);
+
+    try {
+      let content = '';
+      
+      if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+        // テキストファイルの場合
+        content = await readTextFile(file);
+      } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        // PDFファイルの場合
+        content = await readPdfFile(file);
+      } else if (file.name.endsWith('.doc') || file.name.endsWith('.docx')) {
+        // Wordファイルの場合（簡易処理）
+        content = `Wordファイル "${file.name}" がアップロードされました。テキスト抽出には対応していません。`;
+      } else {
+        throw new Error('対応していないファイル形式です');
+      }
+
+      setAiFileContent(content);
+      console.log('✅ ファイル処理完了:', file.name, '内容長:', content.length);
+    } catch (error) {
+      console.error('❌ ファイル処理エラー:', error);
+      alert('ファイルの処理中にエラーが発生しました: ' + error.message);
+      setAiUploadedFile(null);
+      setAiFileContent('');
+    } finally {
+      setAiFileProcessing(false);
+    }
+  };
+
+  // テキストファイル読み込み
+  const readTextFile = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました'));
+      reader.readAsText(file, 'UTF-8');
+    });
+  };
+
+  // PDFファイル読み込み（簡易版）
+  const readPdfFile = async (file) => {
+    try {
+      // PDF.jsを使用してPDFを読み込む
+      const pdfjsLib = window['pdfjs-dist/build/pdf'];
+      if (!pdfjsLib) {
+        throw new Error('PDF.jsライブラリが読み込まれていません');
+      }
+
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      
+      let content = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        content += pageText + '\n';
+      }
+
+      return content;
+    } catch (error) {
+      console.error('PDF処理エラー:', error);
+      // PDF.jsが利用できない場合は、ファイル名のみを返す
+      return `PDFファイル "${file.name}" がアップロードされました。テキスト抽出には対応していません。`;
+    }
+  };
+  
   // DEBUG: AI生成FAQの状態をログ出力
   console.log('🔍 YarisugiSales Render - aiGeneratedFaqs:', aiGeneratedFaqs);
   console.log('🔍 YarisugiSales Render - aiGeneratedFaqs.length:', aiGeneratedFaqs.length);
@@ -2878,7 +2964,13 @@ ${selectedProcess.name}の件でご連絡させていただきました。
                   <div className="flex justify-between items-center">
                     <h3 className="text-xl font-bold">AI自動生成 - FAQ作成</h3>
                     <button 
-                      onClick={() => setShowAiGenerator(false)}
+                      onClick={() => {
+                        setShowAiGenerator(false);
+                        // AIファイル関連の状態をリセット
+                        setAiUploadedFile(null);
+                        setAiFileContent('');
+                        setAiFileProcessing(false);
+                      }}
                       className="text-gray-500 hover:text-gray-700 text-2xl"
                     >
                       ×
@@ -2893,6 +2985,69 @@ ${selectedProcess.name}の件でご連絡させていただきました。
                       {console.log("🎯 入力画面表示中")}
                       <h1 className="text-3xl font-bold mb-8 text-center">FAQ自動生成システム</h1>
                       
+                      {/* ファイルアップロード */}
+                      <div className="bg-white p-8 rounded-lg shadow-lg border-2 border-dashed border-blue-300 hover:border-blue-500 transition-colors mb-6">
+                        <div className="text-center">
+                          <div className="text-6xl mb-4">📁</div>
+                          <h2 className="text-xl font-bold mb-2">ファイルをアップロード</h2>
+                          <p className="text-gray-600 mb-4">PDF、テキストファイルをアップロードしてFAQを生成</p>
+                          <div className="flex flex-col items-center">
+                            <input
+                              type="file"
+                              accept=".pdf,.txt,.doc,.docx"
+                              onChange={handleAiFileUpload}
+                              className="hidden"
+                              id="ai-file-upload"
+                            />
+                            <label
+                              htmlFor="ai-file-upload"
+                              className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition-colors cursor-pointer font-semibold"
+                            >
+                              📁 ファイルを選択
+                            </label>
+                            <p className="text-sm text-gray-500 mt-2">対応形式: PDF, TXT, DOC, DOCX (最大10MB)</p>
+                          </div>
+                          
+                                                     {/* ファイル処理中のローディング */}
+                           {aiFileProcessing && (
+                             <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                               <div className="flex items-center justify-center">
+                                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mr-3"></div>
+                                 <span className="text-blue-600">ファイルを処理中...</span>
+                               </div>
+                             </div>
+                           )}
+
+                           {/* アップロードされたファイル表示 */}
+                           {aiUploadedFile && !aiFileProcessing && (
+                            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center">
+                                  <span className="text-green-600 mr-2">✅</span>
+                                  <span className="font-medium">{aiUploadedFile.name}</span>
+                                  <span className="text-sm text-gray-500 ml-2">({(aiUploadedFile.size / 1024).toFixed(1)} KB)</span>
+                                </div>
+                                <button
+                                  onClick={() => setAiUploadedFile(null)}
+                                  className="text-red-500 hover:text-red-700"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                              {aiFileContent && (
+                                <div className="mt-2">
+                                  <p className="text-sm text-gray-600">ファイル内容:</p>
+                                  <div className="mt-1 p-2 bg-white border rounded text-sm text-gray-700 max-h-32 overflow-y-auto">
+                                    {aiFileContent.substring(0, 200)}...
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* テキスト入力 */}
                       <div className="bg-white p-8 rounded-lg shadow-lg border-2 border-dashed border-green-300 hover:border-green-500 transition-colors">
                         <div className="text-center">
                           <div className="text-6xl mb-4">✍️</div>
@@ -2908,20 +3063,21 @@ ${selectedProcess.name}の件でご連絡させていただきました。
                         </div>
                       </div>
 
-                      {uploadedContent && (
+                      {(uploadedContent || aiFileContent) && (
                         <div className="mt-8 text-center">
                           <button
                             onClick={async () => {
                               try {
                                 console.log("🚀 AI生成開始");
-                                await generateFaqsFromContent(uploadedContent);
+                                const content = aiFileContent || uploadedContent;
+                                await generateFaqsFromContent(content);
                               } catch (err) {
                                 console.error('AI生成エラー:', err);
                               }
                             }}
                             className="bg-indigo-500 text-white px-8 py-3 rounded-lg hover:bg-indigo-600 transition-colors text-lg font-semibold"
                           >
-                            🤖 AIでFAQを生成
+                            🤖 AIでFAQを生成 {aiFileContent ? '(ファイル)' : '(テキスト)'}
                           </button>
                         </div>
                       )}
@@ -2936,7 +3092,13 @@ ${selectedProcess.name}の件でご連絡させていただきました。
                         </div>
                         <div className="flex gap-2">
                           <button
-                            onClick={() => setAiGeneratedFaqs([])}
+                            onClick={() => {
+                              setAiGeneratedFaqs([]);
+                              // AIファイル関連の状態をリセット
+                              setAiUploadedFile(null);
+                              setAiFileContent('');
+                              setAiFileProcessing(false);
+                            }}
                             className="text-gray-500 hover:text-gray-700 px-4 py-2 border rounded-lg"
                           >
                             ← 新規生成

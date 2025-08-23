@@ -1211,14 +1211,14 @@ resource "aws_lambda_function" "knowledge_manager" {
 
 # RAG検索Lambda関数
 resource "aws_lambda_function" "rag_search" {
-  filename         = "lambda_functions/rag_search_lambda.zip"
+  filename         = "lambda_functions/rag_search_optimized.zip"
   function_name    = "${var.project_name}-rag-search-${var.environment}"
   role            = aws_iam_role.ai_lambda_role.arn
   handler         = "rag_search.lambda_handler"
   runtime         = "python3.11"
-  timeout         = 60
-  memory_size     = 512
-  source_code_hash = filebase64sha256("lambda_functions/rag_search_lambda.zip")
+  timeout         = 29
+  memory_size     = 3008
+  source_code_hash = filebase64sha256("lambda_functions/rag_search_optimized.zip")
 
   environment {
     variables = {

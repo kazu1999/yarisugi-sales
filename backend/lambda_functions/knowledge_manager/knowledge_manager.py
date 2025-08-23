@@ -226,11 +226,30 @@ def chunk_text(text, chunk_size=2000, overlap=100):
     return chunks
 
 def generate_embeddings(text_chunks, batch_size=64, max_chunks=None):
-    """OpenAI APIを使用してテキストチャンクの埋め込みを生成（バッチ処理で効率化）"""
+    """OpenAI APIを使用してテキストチャンクの埋め込みを生成（動的バッチ処理で効率化）"""
     api_key = get_openai_api_key()
     if not api_key:
         print("❌ OpenAI API key not available")
         return []
+    
+    # ファイルサイズに応じた動的バッチサイズ調整
+    total_chunks = len(text_chunks)
+    if total_chunks > 100:  # 超大容量ファイル
+        dynamic_batch_size = 32
+        timeout = 15
+        print(f"🚨 超大容量ファイル検出: バッチサイズを{dynamic_batch_size}、タイムアウトを{timeout}秒に調整")
+    elif total_chunks > 50:  # 大容量ファイル
+        dynamic_batch_size = 48
+        timeout = 18
+        print(f"📏 大容量ファイル検出: バッチサイズを{dynamic_batch_size}、タイムアウトを{timeout}秒に調整")
+    elif total_chunks > 20:  # 中容量ファイル
+        dynamic_batch_size = 64
+        timeout = 20
+        print(f"📏 中容量ファイル検出: バッチサイズを{dynamic_batch_size}、タイムアウトを{timeout}秒に調整")
+    else:  # 小容量ファイル
+        dynamic_batch_size = batch_size
+        timeout = 20
+        print(f"📏 小容量ファイル検出: バッチサイズを{dynamic_batch_size}、タイムアウトを{timeout}秒に調整")
     
     # 上限キャップ（デカいPDFで29秒超を防ぐ）
     if max_chunks is not None and len(text_chunks) > max_chunks:
@@ -251,15 +270,15 @@ def generate_embeddings(text_chunks, batch_size=64, max_chunks=None):
         return []
     
     # バッチ送信：input に配列を渡す
-    for start in range(0, len(text_chunks), batch_size):
-        batch = text_chunks[start:start+batch_size]
+    for start in range(0, len(text_chunks), dynamic_batch_size):
+        batch = text_chunks[start:start+dynamic_batch_size]
         try:
             payload = {'input': batch, 'model': 'text-embedding-3-small'}
             response = session.post(
                 'https://api.openai.com/v1/embeddings',
                 headers=headers,
                 json=payload,
-                timeout=20
+                timeout=timeout
             )
             if response.status_code == 200:
                 result = response.json()
@@ -286,13 +305,30 @@ def summarize_content(content):
         return f"【要約エラー】\n• ファイル内容: {len(content)}文字\n• OpenAI APIキーが設定されていません"
     
     try:
-        # コンテンツが長すぎる場合は最初の部分のみを使用
-        max_content_length = 3000  # トークン制限を考慮して短縮
-        print(f"🔍 summarize_content - 元のcontent長: {len(content)}")
+        # ファイルサイズに応じた動的要約長調整
+        content_length = len(content)
+        if content_length > 2000000:  # 2MB以上
+            max_content_length = 1000
+            max_tokens = 200
+            print(f"🚨 超大容量ファイル要約: 要約長を{max_content_length}文字、トークン数を{max_tokens}に制限")
+        elif content_length > 1000000:  # 1MB以上
+            max_content_length = 2000
+            max_tokens = 250
+            print(f"📏 大容量ファイル要約: 要約長を{max_content_length}文字、トークン数を{max_tokens}に制限")
+        elif content_length > 500000:  # 500KB以上
+            max_content_length = 3000
+            max_tokens = 300
+            print(f"📏 中容量ファイル要約: 要約長を{max_content_length}文字、トークン数を{max_tokens}に制限")
+        else:  # 500KB以下
+            max_content_length = 4000
+            max_tokens = 400
+            print(f"📏 小容量ファイル要約: 要約長を{max_content_length}文字、トークン数を{max_tokens}に制限")
+        
+        print(f"🔍 summarize_content - 元のcontent長: {content_length}文字")
         print(f"🔍 summarize_content - 元のcontent内容（最初の200文字）: {content[:200]}")
         
         content_to_summarize = content[:max_content_length]
-        print(f"🔍 summarize_content - content_to_summarize長: {len(content_to_summarize)}")
+        print(f"🔍 summarize_content - content_to_summarize長: {len(content_to_summarize)}文字")
         print(f"🔍 summarize_content - content_to_summarize内容（最初の200文字）: {content_to_summarize[:200]}")
         
         if len(content) > max_content_length:
@@ -316,7 +352,7 @@ def summarize_content(content):
                     'content': f'以下の文書を要約してください：\n\n{content_to_summarize}'
                 }
             ],
-            'max_tokens': 300,  # トークン数を削減
+            'max_tokens': max_tokens,  # 動的トークン数
             'temperature': 0.3
         }
         
@@ -378,8 +414,38 @@ def create_knowledge_entry(user_id, title, content, category, file_type=None, s3
     # テキストをチャンクに分割
     chunks = chunk_text(content)
     
-    # 埋め込みを生成（バッチ＋上限キャップ）
-    max_embed_chunks = int(os.environ.get('MAX_EMBED_CHUNKS', '48'))  # まずは 48 件まで等
+    # ファイルサイズに応じて動的にチャンク数を調整
+    content_length = len(content)
+    max_embed_chunks = int(os.environ.get('MAX_EMBED_CHUNKS', '48'))
+    
+    # ファイルサイズに応じた動的調整
+    print(f"📊 ファイルサイズ分析: {content_length}文字 ({content_length/1024:.1f}KB)")
+    
+    if content_length > 2000000:  # 2MB以上（超大容量）
+        max_embed_chunks = min(max_embed_chunks, 16)
+        chunk_size = 3000  # チャンクサイズを大きくしてチャンク数を減らす
+        print(f"🚨 超大容量ファイル検出 ({content_length}文字): チャンク数を{max_embed_chunks}、チャンクサイズを{chunk_size}に調整")
+    elif content_length > 1000000:  # 1MB以上（大容量）
+        max_embed_chunks = min(max_embed_chunks, 24)
+        chunk_size = 2500
+        print(f"📏 大容量ファイル検出 ({content_length}文字): チャンク数を{max_embed_chunks}、チャンクサイズを{chunk_size}に調整")
+    elif content_length > 500000:  # 500KB以上（中容量）
+        max_embed_chunks = min(max_embed_chunks, 36)
+        chunk_size = 2000
+        print(f"📏 中容量ファイル検出 ({content_length}文字): チャンク数を{max_embed_chunks}、チャンクサイズを{chunk_size}に調整")
+    elif content_length > 100000:  # 100KB以上（小容量）
+        max_embed_chunks = min(max_embed_chunks, 48)
+        chunk_size = 2000
+        print(f"📏 小容量ファイル検出 ({content_length}文字): チャンク数を{max_embed_chunks}、チャンクサイズを{chunk_size}に調整")
+    else:  # 100KB以下（軽量）
+        max_embed_chunks = min(max_embed_chunks, 48)
+        chunk_size = 2000
+        print(f"📏 軽量ファイル検出 ({content_length}文字): チャンク数を{max_embed_chunks}、チャンクサイズを{chunk_size}に調整")
+    
+    # 動的チャンクサイズで再分割
+    chunks = chunk_text(content, chunk_size=chunk_size)
+    print(f"📄 動的調整後: {len(chunks)}チャンク（最大{max_embed_chunks}まで処理）")
+    
     embeddings = generate_embeddings(chunks, batch_size=64, max_chunks=max_embed_chunks)
     
     # S3リンクを生成（ファイルがS3にある場合）
@@ -425,6 +491,14 @@ def create_knowledge_entry(user_id, title, content, category, file_type=None, s3
                     'createdAt': datetime.utcnow().isoformat()
                 }
                 vectors_table.put_item(Item=vector_item)
+        
+        # 処理統計情報をログ出力
+        print(f"📊 処理完了統計:")
+        print(f"   • ファイルサイズ: {content_length}文字 ({content_length/1024:.1f}KB)")
+        print(f"   • チャンク数: {len(chunks)}個")
+        print(f"   • 埋め込み生成: {len(embeddings)}個")
+        print(f"   • 要約長: {len(summary)}文字")
+        print(f"   • 処理時間: 動的調整により最適化済み")
         
         return knowledge_item
     except ClientError as e:

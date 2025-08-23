@@ -149,50 +149,19 @@ def get_knowledge_context_optimized(knowledge_ids):
     """最適化されたナレッジ詳細取得"""
     context_items = []
     
-    print(f"🔍 Getting context for knowledge IDs: {knowledge_ids}")
-    
     for knowledge_id in knowledge_ids:
         try:
-            # 正しいキー構造を使用: PK + SK
-            # まず、ベクトルテーブルからuserIdを取得
-            vector_response = vectors_table.scan(
-                FilterExpression='knowledgeId = :kid',
-                ExpressionAttributeValues={':kid': knowledge_id},
-                Limit=1
-            )
-            
-            vector_items = vector_response.get('Items', [])
-            if not vector_items:
-                print(f"❌ No vector found for knowledge ID: {knowledge_id}")
-                continue
-                
-            user_id = vector_items[0].get('userId')
-            if not user_id:
-                print(f"❌ No userId found in vector for knowledge ID: {knowledge_id}")
-                continue
-            
-            # 正しいキーでナレッジテーブルから取得
-            pk = f"KNOWLEDGE#{user_id}"
-            sk = f"KNOWLEDGE#{knowledge_id}"
-            
             response = knowledge_table.get_item(
-                Key={
-                    'PK': pk,
-                    'SK': sk
-                }
+                Key={'knowledgeId': knowledge_id}
             )
             
             item = response.get('Item')
             if item:
-                print(f"✅ Found knowledge item: {item.get('title', 'Unknown')}")
                 context_items.append(item)
-            else:
-                print(f"❌ Knowledge item not found for ID: {knowledge_id}")
                 
         except ClientError as e:
-            print(f"❌ Error getting knowledge context: {e}")
+            print(f"Error getting knowledge context: {e}")
     
-    print(f"📊 Total context items retrieved: {len(context_items)}")
     return context_items
 
 def generate_rag_response_optimized(query, similar_chunks, context_items):
@@ -231,9 +200,6 @@ def generate_rag_response_optimized(query, similar_chunks, context_items):
             }
             for item in context_items
         ]
-        
-        print(f"📚 Referenced knowledge: {referenced_knowledge}")
-        print(f"📝 Context text length: {len(context_text)} characters")
         
         data = {
             'model': 'gpt-4o-mini',
@@ -365,7 +331,6 @@ def lambda_handler(event, context):
             # 3. ナレッジの詳細情報を取得（最適化版）
             context_start = time.time()
             knowledge_ids = list(set([chunk['chunk']['knowledgeId'] for chunk in similar_chunks]))
-            print(f"🔍 Extracted knowledge IDs: {knowledge_ids}")
             context_items = get_knowledge_context_optimized(knowledge_ids)
             context_time = time.time() - context_start
             print(f"⏱️ Context retrieval: {context_time:.2f}s")
