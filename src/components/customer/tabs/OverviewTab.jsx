@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Building, CheckCircle, Edit, Copy, Trash2, Download, Save, X } from 'lucide-react';
 import Button from '../../common/Button';
 import { awsApiClient } from '../../../utils/awsApiClient';
+import CustomerReportModal from '../../modals/CustomerReportModal';
 
 const OverviewTab = ({ 
   customerForm, 
@@ -14,6 +15,8 @@ const OverviewTab = ({
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
   const [showSaveMessage, setShowSaveMessage] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [companyProfile, setCompanyProfile] = useState(null);
 
   const handleSave = async () => {
     // 必須フィールドの検証
@@ -48,6 +51,23 @@ const OverviewTab = ({
       setTimeout(() => setShowSaveMessage(false), 3000);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleGenerateReport = async () => {
+    try {
+      // 自社情報を取得
+      const profileResponse = await awsApiClient.request('/company-profile', {
+        method: 'GET'
+      });
+      setCompanyProfile(profileResponse);
+      
+      // レポートモーダルを開く
+      setShowReportModal(true);
+    } catch (error) {
+      console.error('Failed to fetch company profile:', error);
+      // エラーが発生してもモーダルは開く（デフォルト値で処理）
+      setShowReportModal(true);
     }
   };
 
@@ -221,7 +241,7 @@ const OverviewTab = ({
               </>
             )}
           </Button>
-          <Button>
+          <Button onClick={handleGenerateReport}>
             <Download className="w-4 h-4 mr-2" />
             レポート抽出
           </Button>
@@ -307,6 +327,14 @@ const OverviewTab = ({
           </div>
         </div>
       )}
+
+      {/* レポートモーダル */}
+      <CustomerReportModal
+        isOpen={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        customerData={selectedCustomer}
+        companyProfile={companyProfile}
+      />
     </div>
   );
 };

@@ -1129,6 +1129,15 @@ resource "aws_lambda_permission" "company_profile" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
 }
 
+# 顧客レポート生成Lambda関数の権限設定
+resource "aws_lambda_permission" "customer_report" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.customer_report.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
 # Lambda関数の環境変数設定
 resource "aws_lambda_function" "customers_api" {
   filename         = "../lambda_functions/customers_lambda/customers_lambda.zip"
@@ -1320,6 +1329,29 @@ resource "aws_lambda_function" "company_profile" {
   }
 }
 
+# 顧客レポート生成Lambda関数
+resource "aws_lambda_function" "customer_report" {
+  filename         = "../lambda_functions/customer_report_lambda.zip"
+  function_name    = "${var.project_name}-customer-report-${var.environment}"
+  role            = aws_iam_role.ai_lambda_role.arn
+  handler         = "customer_report.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 30
+  memory_size     = 256
+  source_code_hash = filebase64sha256("../lambda_functions/customer_report_lambda.zip")
+
+  environment {
+    variables = {
+      OPENAI_API_SECRET_ARN = aws_secretsmanager_secret.openai_api_key.arn
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
 # ナレッジ管理API リソース
 resource "aws_api_gateway_resource" "knowledge" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -1353,6 +1385,13 @@ resource "aws_api_gateway_resource" "company_profile" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_rest_api.main.root_resource_id
   path_part   = "company-profile"
+}
+
+# 顧客レポート生成API リソース
+resource "aws_api_gateway_resource" "customer_report" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "customer-report"
 }
 
 # 提案内容管理API リソース
@@ -1431,6 +1470,22 @@ resource "aws_api_gateway_method" "company_profile_put" {
 resource "aws_api_gateway_method" "company_profile_options" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.company_profile.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# 顧客レポート生成API メソッド
+resource "aws_api_gateway_method" "customer_report_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.customer_report.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "customer_report_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.customer_report.id
   http_method   = "OPTIONS"
   authorization = "NONE"
 }
@@ -1642,6 +1697,55 @@ resource "aws_api_gateway_integration_response" "company_profile_options" {
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,PUT,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# 顧客レポート生成API 統合
+resource "aws_api_gateway_integration" "customer_report_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.customer_report.id
+  http_method = aws_api_gateway_method.customer_report_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.customer_report.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "customer_report_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.customer_report.id
+  http_method = aws_api_gateway_method.customer_report_options.http_method
+
+  type = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# 顧客レポート生成API CORS設定
+resource "aws_api_gateway_method_response" "customer_report_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.customer_report.id
+  http_method = aws_api_gateway_method.customer_report_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "customer_report_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.customer_report.id
+  http_method = aws_api_gateway_method.customer_report_options.http_method
+  status_code = aws_api_gateway_method_response.customer_report_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
     "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
@@ -2008,7 +2112,9 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_method.proposals_options,
     aws_api_gateway_integration.proposals_options,
     aws_api_gateway_method_response.proposals_options,
-    aws_api_gateway_integration_response.proposals_options
+    aws_api_gateway_integration_response.proposals_options,
+    aws_api_gateway_method.customer_report_post,
+    aws_api_gateway_integration.customer_report_post
   ]
 
   lifecycle {

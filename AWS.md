@@ -1,7 +1,7 @@
 # AWS アーキテクチャ仕様書
 
 ## 概要
-Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。
+Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。AIを活用した顧客分析と営業戦略提案機能により、営業担当者の生産性を大幅に向上させます。
 
 ## アーキテクチャ図
 
@@ -118,6 +118,12 @@ Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。
 - `PUT /company-profile/proposals/{id}` - 提案内容更新
 - `DELETE /company-profile/proposals/{id}` - 提案内容削除
 
+#### AI顧客レポート生成 (`yarisugi-sales-customer-report-dev`) ✅ 新規追加
+- `POST /customer-report` - AI顧客レポート生成（Webサイト分析含む）
+- **メモリ**: 256MB
+- **タイムアウト**: 30秒
+- **機能**: Webサイト分析、包括的顧客分析、営業戦略提案
+
 ### CORS設定
 - **許可オリジン**: `*`（全オリジン許可）
 - **許可メソッド**: GET, POST, PUT, DELETE, OPTIONS
@@ -172,6 +178,13 @@ Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。
 - **依存関係**: boto3
 - **機能**: 基本情報・提案内容のCRUD操作
 
+### AI顧客レポート生成Lambda ✅ 新規追加
+- **ランタイム**: Python 3.11
+- **メモリ**: 256MB
+- **タイムアウト**: 30秒
+- **依存関係**: boto3, requests==2.31.0, beautifulsoup4==4.12.2
+- **機能**: Webサイト分析、AI顧客分析、営業戦略提案
+
 ## ストレージ
 
 ### Amazon S3
@@ -207,6 +220,93 @@ Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。
 1. `terraform init`
 2. `terraform plan`
 3. `terraform apply`
+
+## AI顧客レポート生成機能 ✅ 新規追加
+
+### 概要
+顧客のWebサイトを自動分析し、包括的な顧客分析レポートと営業戦略を生成する機能です。
+
+### 機能特徴
+- **Webサイト自動分析**: 顧客のWebサイトを自動取得・解析
+- **包括的顧客分析**: 顧客情報、Webサイト内容、自社情報を統合分析
+- **営業戦略提案**: AIによる具体的な営業提案とアプローチ方法
+- **3セクション構成**: 顧客まとめ、営業提案、推奨アプローチ
+
+### 技術仕様
+
+#### Webサイト分析機能
+- **BeautifulSoup4**: HTML解析による高精度なテキスト抽出
+- **URL正規化**: `http://`や`https://`が付いていないURLも自動処理
+- **テキストクリーニング**: 不要なHTML要素（script、style、nav、footer、header）を除去
+- **文字数制限**: 2000文字に制限してAIの処理負荷を軽減
+- **エラーハンドリング**: サイト取得失敗時の適切な処理
+
+#### AI分析機能
+- **OpenAI GPT-4o-mini**: 自然言語処理による顧客分析
+- **統合分析**: 顧客情報、Webサイト内容、自社情報、提案内容を統合
+- **営業コンサルタント**: 営業専門家としての分析・提案
+- **構造化出力**: 3つのセクションに分けた詳細なレポート
+
+### API仕様
+
+#### 顧客レポート生成
+- **POST /customer-report**: AI顧客レポート生成（Webサイト分析含む）
+
+#### リクエスト形式
+```json
+{
+  "customerData": {
+    "companyName": "顧客会社名",
+    "customerName": "担当者名",
+    "industry": "業種",
+    "location": "所在地",
+    "siteUrl": "WebサイトURL",
+    "email": "メールアドレス",
+    "lineId": "LINE ID",
+    "snsStatus": "SNS運用状況",
+    "salesPerson": "担当営業",
+    "status": "ステータス"
+  },
+  "companyProfile": {
+    "companyName": "自社名",
+    "introduction": "自己紹介文",
+    "services": "サービス内容",
+    "achievements": "実績",
+    "proposals": [
+      {
+        "title": "提案タイトル",
+        "purpose": "提案目的",
+        "content": "提案内容",
+        "estimatedCost": "想定金額"
+      }
+    ]
+  }
+}
+```
+
+#### レスポンス形式
+```json
+{
+  "customerSummary": "顧客についてのまとめ（200-300文字）",
+  "salesProposal": "営業提案（300-400文字）",
+  "recommendedApproach": "推奨アプローチ（200-300文字）",
+  "generatedAt": "2025-08-25T06:59:24.085000+00:00",
+  "modelUsed": "gpt-4o-mini"
+}
+```
+
+### 処理フロー
+1. **Webサイト取得**: 顧客のWebサイトURLからHTMLを取得
+2. **テキスト抽出**: BeautifulSoup4でHTMLを解析し、テキストを抽出
+3. **データ統合**: 顧客情報、Webサイト内容、自社情報を統合
+4. **AI分析**: OpenAI GPT-4o-miniで包括的な分析を実行
+5. **レポート生成**: 3つのセクションに分けた詳細なレポートを生成
+
+### エラーハンドリング
+- **サイト取得失敗**: サイトが取得できない場合でもレポート生成を継続
+- **タイムアウト**: 10秒のタイムアウトでレスポンス性を確保
+- **User-Agent設定**: ブラウザとして認識されるようヘッダーを設定
+- **CORS対応**: フロントエンドからのアクセスに対応
 
 ## 基本情報管理機能 ✅ 新規追加
 
@@ -291,7 +391,7 @@ Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。
 - **メモリ使用量**: 3008MB
 
 ## 最終更新
-2025年8月23日
+2025年8月25日
 
 ## バージョン
-v3.3.0
+v3.4.0
