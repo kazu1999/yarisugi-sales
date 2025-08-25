@@ -84,6 +84,7 @@ const CustomerDetail = ({
             industryOptions={industryOptions}
             snsStatusOptions={snsStatusOptions}
             customerStatuses={customerStatuses}
+            selectedCustomer={selectedCustomer}
           />
         );
       case '営業アクション':

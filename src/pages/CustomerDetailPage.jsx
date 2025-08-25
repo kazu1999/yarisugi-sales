@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import CustomerDetail from '../components/customer/CustomerDetail';
 import { useCustomerManagement } from '../hooks/useCustomerManagement';
+import { awsApiClient } from '../utils/awsApiClient';
 
 const CustomerDetailPage = () => {
   const { customerId } = useParams();
@@ -64,76 +65,55 @@ const CustomerDetailPage = () => {
     processTypes
   } = useCustomerManagement();
 
-  // 顧客データ（実際のアプリケーションではAPIから取得）
+  // 顧客データ
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     // 顧客IDに基づいて顧客データを取得
-    // 実際のアプリケーションではAPIコールを行う
     const fetchCustomerData = async () => {
       setLoading(true);
+      setError(null);
+      
       try {
-        // 顧客IDに基づいてサンプルデータを取得
-        const customerDataMap = {
-          'tech-solution-001': {
-            id: 'tech-solution-001',
-            name: '株式会社テックソリューション',
-            contact: '田中一郎',
-            industry: 'IT・通信',
-            email: 'tanaka@tech-solution.com',
-            phone: '03-1234-5678',
-            status: '商談中'
-          },
-          'global-trading-002': {
-            id: 'global-trading-002',
-            name: '株式会社グローバル商事',
-            contact: '佐藤花子',
-            industry: '小売・流通',
-            email: 'sato@global-trading.co.jp',
-            phone: '03-2345-6789',
-            status: '成約'
-          },
-          'manufacturing-003': {
-            id: 'manufacturing-003',
-            name: '株式会社製造工業',
-            contact: '鈴木次郎',
-            industry: '製造業',
-            email: 'suzuki@manufacturing.com',
-            phone: '03-3456-7890',
-            status: '新規'
-          }
-        };
+        console.log('🔍 Fetching customer data for ID:', customerId);
         
-        const customerData = customerDataMap[customerId] || {
-          id: customerId,
-          name: '不明な顧客',
-          contact: '不明',
-          industry: '不明',
-          email: 'unknown@example.com',
-          phone: '不明',
-          status: '不明'
-        };
-        
-        setSelectedCustomer(customerData);
-        
-        // 顧客情報をフォームに設定
-        setCustomerForm({
-          companyName: customerData.name || '',
-          customerName: customerData.contact || '',
-          location: '',
-          industry: customerData.industry || '',
-          siteUrl: '',
-          snsStatus: '',
-          lineId: '',
-          email: customerData.email || '',
-          salesPerson: '',
-          status: customerData.status || ''
+        // APIから顧客データを取得
+        const response = await awsApiClient.request(`/customers/${customerId}`, {
+          method: 'GET'
         });
+        
+        console.log('✅ Customer data received:', response);
+        
+        if (response && response.id) {
+          setSelectedCustomer(response);
+          
+          // 顧客情報をフォームに設定
+          setCustomerForm({
+            companyName: response.companyName || '',
+            customerName: response.customerName || '',
+            location: response.location || '',
+            industry: response.industry || '',
+            siteUrl: response.siteUrl || '',
+            snsStatus: response.snsStatus || '',
+            lineId: response.lineId || '',
+            email: response.email || '',
+            salesPerson: response.salesPerson || '',
+            status: response.status || '新規'
+          });
+        } else {
+          throw new Error('Invalid customer data received');
+        }
+        
       } catch (error) {
-        console.error('顧客データの取得に失敗しました:', error);
+        console.error('❌ Failed to fetch customer data:', error);
+        setError('顧客データの取得に失敗しました');
+        
         // エラー時は一覧ページに戻る
-        navigate('/');
+        setTimeout(() => {
+          navigate('/');
+        }, 3000);
       } finally {
         setLoading(false);
       }
@@ -155,10 +135,29 @@ const CustomerDetailPage = () => {
     );
   }
 
+  if (error) {
+    return (
+      <div className="h-screen w-full bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-500 text-6xl mb-4">⚠️</div>
+          <p className="text-red-600 mb-4">{error}</p>
+          <p className="text-gray-600 mb-4">3秒後に一覧ページに戻ります...</p>
+          <button
+            onClick={() => navigate('/')}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+          >
+            今すぐ一覧に戻る
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!selectedCustomer) {
     return (
       <div className="h-screen w-full bg-gray-50 flex items-center justify-center">
         <div className="text-center">
+          <div className="text-gray-500 text-6xl mb-4">🔍</div>
           <p className="text-gray-600 mb-4">顧客が見つかりませんでした</p>
           <button
             onClick={() => navigate('/')}
@@ -187,8 +186,8 @@ const CustomerDetailPage = () => {
               </button>
               <div className="border-l border-gray-300 h-6"></div>
               <div>
-                <h1 className="text-lg sm:text-xl font-bold text-gray-900">{selectedCustomer.name}</h1>
-                <p className="text-sm text-gray-600">{selectedCustomer.contact} • {selectedCustomer.industry}</p>
+                <h1 className="text-lg sm:text-xl font-bold text-gray-900">{selectedCustomer.companyName}</h1>
+                <p className="text-sm text-gray-600">{selectedCustomer.customerName} • {selectedCustomer.industry}</p>
               </div>
             </div>
             <div className="flex items-center space-x-3">

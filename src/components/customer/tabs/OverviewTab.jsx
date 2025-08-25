@@ -1,16 +1,70 @@
-import React from 'react';
-import { Building, CheckCircle, Edit, Copy, Trash2, Download } from 'lucide-react';
+import React, { useState } from 'react';
+import { Building, CheckCircle, Edit, Copy, Trash2, Download, Save, X } from 'lucide-react';
 import Button from '../../common/Button';
+import { awsApiClient } from '../../../utils/awsApiClient';
 
 const OverviewTab = ({ 
   customerForm, 
   setCustomerForm, 
   industryOptions, 
   snsStatusOptions, 
-  customerStatuses 
+  customerStatuses,
+  selectedCustomer
 }) => {
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [showSaveMessage, setShowSaveMessage] = useState(false);
+
+  const handleSave = async () => {
+    // 必須フィールドの検証
+    if (!customerForm.companyName || !customerForm.customerName || !customerForm.email || !customerForm.industry || !customerForm.status) {
+      setSaveMessage('必須フィールドを入力してください');
+      setShowSaveMessage(true);
+      setTimeout(() => setShowSaveMessage(false), 3000);
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveMessage('');
+
+    try {
+      console.log('💾 Saving customer data:', customerForm);
+      
+      const response = await awsApiClient.request(`/customers/${selectedCustomer.id}`, {
+        method: 'PUT',
+        body: customerForm
+      });
+
+      console.log('✅ Customer data saved:', response);
+      
+      setSaveMessage('顧客情報を更新しました');
+      setShowSaveMessage(true);
+      setTimeout(() => setShowSaveMessage(false), 3000);
+      
+    } catch (error) {
+      console.error('❌ Failed to save customer data:', error);
+      setSaveMessage('保存に失敗しました');
+      setShowSaveMessage(true);
+      setTimeout(() => setShowSaveMessage(false), 3000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
+      {/* 保存メッセージ */}
+      {showSaveMessage && (
+        <div className={`mb-4 p-4 rounded-lg flex items-center justify-between ${
+          saveMessage.includes('失敗') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+        }`}>
+          <span>{saveMessage}</span>
+          <button onClick={() => setShowSaveMessage(false)}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-lg font-bold mb-6">顧客情報</h2>
         
@@ -150,7 +204,23 @@ const OverviewTab = ({
         </div>
         
         <div className="mt-6 flex justify-end space-x-3">
-          <Button>更新</Button>
+          <Button 
+            onClick={handleSave}
+            disabled={isSaving}
+            className="flex items-center"
+          >
+            {isSaving ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                保存中...
+              </>
+            ) : (
+              <>
+                <Save className="w-4 h-4 mr-2" />
+                保存
+              </>
+            )}
+          </Button>
           <Button>
             <Download className="w-4 h-4 mr-2" />
             レポート抽出
@@ -232,7 +302,7 @@ const OverviewTab = ({
               </button>
             </div>
             <div className="text-sm text-gray-500">
-              登録日: {new Date().toLocaleDateString('ja-JP')}
+              更新日: {new Date().toLocaleDateString('ja-JP')}
             </div>
           </div>
         </div>
