@@ -302,6 +302,74 @@ resource "aws_dynamodb_table" "sales_processes" {
   }
 }
 
+# 基本情報テーブル
+resource "aws_dynamodb_table" "company_profiles" {
+  name           = "${var.project_name}-company-profiles-${var.environment}"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "PK"
+  range_key      = "SK"
+
+  attribute {
+    name = "PK"
+    type = "S"
+  }
+
+  attribute {
+    name = "SK"
+    type = "S"
+  }
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name     = "UserIdIndex"
+    hash_key = "userId"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# 提案内容テーブル
+resource "aws_dynamodb_table" "proposals" {
+  name           = "${var.project_name}-proposals-${var.environment}"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "PK"
+  range_key      = "SK"
+
+  attribute {
+    name = "PK"
+    type = "S"
+  }
+
+  attribute {
+    name = "SK"
+    type = "S"
+  }
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name     = "UserIdIndex"
+    hash_key = "userId"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
 # Cognito User Pool
 resource "aws_cognito_user_pool" "main" {
   name = "${var.project_name}-user-pool-${var.environment}"
@@ -390,7 +458,9 @@ resource "aws_iam_role_policy" "lambda_policy" {
           aws_dynamodb_table.faqs.arn,
           aws_dynamodb_table.knowledge.arn,
           aws_dynamodb_table.knowledge_vectors.arn,
-          aws_dynamodb_table.sales_processes.arn
+          aws_dynamodb_table.sales_processes.arn,
+          aws_dynamodb_table.company_profiles.arn,
+          aws_dynamodb_table.proposals.arn
         ]
       },
       {
@@ -444,33 +514,6 @@ resource "aws_api_gateway_integration" "health" {
 
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
-  }
-}
-
-# API Gateway Method Response
-resource "aws_api_gateway_method_response" "health" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.root.id
-  http_method = aws_api_gateway_method.health.http_method
-  status_code = "200"
-
-  response_models = {
-    "application/json" = "Empty"
-  }
-}
-
-# API Gateway Integration Response
-resource "aws_api_gateway_integration_response" "health" {
-  rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.root.id
-  http_method = aws_api_gateway_method.health.http_method
-  status_code = aws_api_gateway_method_response.health.status_code
-
-  response_templates = {
-    "application/json" = jsonencode({
-      message = "Yarisugi Sales API is running"
-      timestamp = "$${context.requestTime}"
-    })
   }
 }
 
@@ -1050,6 +1093,9 @@ resource "aws_api_gateway_gateway_response" "default_4xx" {
     "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
     "gatewayresponse.header.Access-Control-Allow-Headers" = "'Authorization,Content-Type,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-Requested-With,Origin'"
   }
+  response_templates = {
+    "application/json" = "{\"message\":$context.error.messageString}"
+  }
 }
 
 resource "aws_api_gateway_gateway_response" "default_5xx" {
@@ -1060,6 +1106,9 @@ resource "aws_api_gateway_gateway_response" "default_5xx" {
     "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
     "gatewayresponse.header.Access-Control-Allow-Headers" = "'Authorization,Content-Type,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,X-Requested-With,Origin'"
   }
+  response_templates = {
+    "application/json" = "{\"message\":$context.error.messageString}"
+  }
 }
 
 # Lambda関数の権限設定
@@ -1067,6 +1116,15 @@ resource "aws_lambda_permission" "api_gateway" {
   statement_id  = "AllowExecutionFromAPIGateway"
   action        = "lambda:InvokeFunction"
   function_name = "yarisugi-customers-api"
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
+# 基本情報管理Lambda関数の権限設定
+resource "aws_lambda_permission" "company_profile" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.company_profile.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
 }
@@ -1160,8 +1218,12 @@ resource "aws_iam_role_policy" "ai_lambda_policy" {
           aws_dynamodb_table.faqs.arn,
           aws_dynamodb_table.knowledge.arn,
           aws_dynamodb_table.knowledge_vectors.arn,
+          aws_dynamodb_table.company_profiles.arn,
+          aws_dynamodb_table.proposals.arn,
           "${aws_dynamodb_table.knowledge.arn}/index/*",
-          "${aws_dynamodb_table.knowledge_vectors.arn}/index/*"
+          "${aws_dynamodb_table.knowledge_vectors.arn}/index/*",
+          "${aws_dynamodb_table.company_profiles.arn}/index/*",
+          "${aws_dynamodb_table.proposals.arn}/index/*"
         ]
       },
       {
@@ -1234,6 +1296,30 @@ resource "aws_lambda_function" "rag_search" {
   }
 }
 
+# 基本情報管理Lambda関数
+resource "aws_lambda_function" "company_profile" {
+  filename         = "lambda_functions/company_profile_lambda.zip"
+  function_name    = "${var.project_name}-company-profile-${var.environment}"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "company_profile.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 30
+  memory_size     = 128
+  source_code_hash = filebase64sha256("lambda_functions/company_profile_lambda.zip")
+
+  environment {
+    variables = {
+      COMPANY_PROFILES_TABLE = aws_dynamodb_table.company_profiles.name
+      PROPOSALS_TABLE = aws_dynamodb_table.proposals.name
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
 # ナレッジ管理API リソース
 resource "aws_api_gateway_resource" "knowledge" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -1260,6 +1346,27 @@ resource "aws_api_gateway_resource" "s3_presigned_url" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.knowledge.id
   path_part   = "s3-presigned-url"
+}
+
+# 基本情報管理API リソース
+resource "aws_api_gateway_resource" "company_profile" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "company-profile"
+}
+
+# 提案内容管理API リソース
+resource "aws_api_gateway_resource" "proposals" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.company_profile.id
+  path_part   = "proposals"
+}
+
+# 個別提案内容用のリソース
+resource "aws_api_gateway_resource" "proposal_item" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.proposals.id
+  path_part   = "{proposalId}"
 }
 
 # ナレッジ管理API メソッド
@@ -1302,6 +1409,78 @@ resource "aws_api_gateway_method" "knowledge_delete" {
   http_method   = "DELETE"
   authorization = "COGNITO_USER_POOLS"
   authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# 基本情報管理API メソッド
+resource "aws_api_gateway_method" "company_profile_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.company_profile.id
+  http_method   = "GET"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "company_profile_put" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.company_profile.id
+  http_method   = "PUT"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "company_profile_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.company_profile.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# 提案内容管理API メソッド
+resource "aws_api_gateway_method" "proposals_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.proposals.id
+  http_method   = "GET"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "proposals_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.proposals.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "proposals_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.proposals.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# 個別提案内容管理API メソッド
+resource "aws_api_gateway_method" "proposal_put" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.proposal_item.id
+  http_method   = "PUT"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "proposal_delete" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.proposal_item.id
+  http_method   = "DELETE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "proposal_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.proposal_item.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
 }
 
 resource "aws_api_gateway_method" "knowledge_item_options" {
@@ -1408,6 +1587,183 @@ resource "aws_api_gateway_integration" "knowledge_item_options" {
   }
 }
 
+# 基本情報管理API 統合
+resource "aws_api_gateway_integration" "company_profile_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.company_profile.id
+  http_method = aws_api_gateway_method.company_profile_get.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.company_profile.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "company_profile_put" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.company_profile.id
+  http_method = aws_api_gateway_method.company_profile_put.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.company_profile.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "company_profile_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.company_profile.id
+  http_method = aws_api_gateway_method.company_profile_options.http_method
+
+  type = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# 基本情報管理API CORS設定
+resource "aws_api_gateway_method_response" "company_profile_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.company_profile.id
+  http_method = aws_api_gateway_method.company_profile_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "company_profile_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.company_profile.id
+  http_method = aws_api_gateway_method.company_profile_options.http_method
+  status_code = aws_api_gateway_method_response.company_profile_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,PUT,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# 提案内容管理API 統合
+resource "aws_api_gateway_integration" "proposals_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.proposals.id
+  http_method = aws_api_gateway_method.proposals_get.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.company_profile.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "proposals_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.proposals.id
+  http_method = aws_api_gateway_method.proposals_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.company_profile.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "proposals_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.proposals.id
+  http_method = aws_api_gateway_method.proposals_options.http_method
+
+  type = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# 提案内容管理API CORS設定
+resource "aws_api_gateway_method_response" "proposals_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.proposals.id
+  http_method = aws_api_gateway_method.proposals_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "proposals_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.proposals.id
+  http_method = aws_api_gateway_method.proposals_options.http_method
+  status_code = aws_api_gateway_method_response.proposals_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# 個別提案内容管理API 統合
+resource "aws_api_gateway_integration" "proposal_put" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.proposal_item.id
+  http_method = aws_api_gateway_method.proposal_put.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.company_profile.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "proposal_delete" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.proposal_item.id
+  http_method = aws_api_gateway_method.proposal_delete.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.company_profile.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "proposal_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.proposal_item.id
+  http_method = aws_api_gateway_method.proposal_options.http_method
+
+  type = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# 個別提案内容管理API CORS設定
+resource "aws_api_gateway_method_response" "proposal_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.proposal_item.id
+  http_method = aws_api_gateway_method.proposal_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "proposal_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.proposal_item.id
+  http_method = aws_api_gateway_method.proposal_options.http_method
+  status_code = aws_api_gateway_method_response.proposal_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
 # RAG検索API 統合
 resource "aws_api_gateway_integration" "rag_search_post" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -1446,6 +1802,8 @@ resource "aws_lambda_permission" "rag_search" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*/*"
 }
+
+
 
 # S3署名付きURL API インテグレーション
 resource "aws_api_gateway_integration" "s3_presigned_url_post" {
@@ -1582,10 +1940,6 @@ resource "aws_api_gateway_deployment" "main" {
   stage_name  = var.environment
 
   depends_on = [
-    aws_api_gateway_method.health,
-    aws_api_gateway_integration.health,
-    aws_api_gateway_method_response.health,
-    aws_api_gateway_integration_response.health,
     aws_api_gateway_method.customers_get,
     aws_api_gateway_integration.customers_get,
     aws_api_gateway_method.customers_post,
@@ -1626,7 +1980,35 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_method.ai_generate_options,
     aws_api_gateway_integration.ai_generate_options,
     aws_api_gateway_method_response.ai_generate_options,
-    aws_api_gateway_integration_response.ai_generate_options
+    aws_api_gateway_integration_response.ai_generate_options,
+    aws_api_gateway_method.company_profile_get,
+    aws_api_gateway_integration.company_profile_get,
+    aws_api_gateway_method.company_profile_put,
+    aws_api_gateway_integration.company_profile_put,
+    aws_api_gateway_method.company_profile_options,
+    aws_api_gateway_integration.company_profile_options,
+    aws_api_gateway_method_response.company_profile_options,
+    aws_api_gateway_integration_response.company_profile_options,
+    aws_api_gateway_method.proposals_get,
+    aws_api_gateway_integration.proposals_get,
+    aws_api_gateway_method.proposals_post,
+    aws_api_gateway_integration.proposals_post,
+    aws_api_gateway_method.proposals_options,
+    aws_api_gateway_integration.proposals_options,
+    aws_api_gateway_method_response.proposals_options,
+    aws_api_gateway_integration_response.proposals_options,
+    aws_api_gateway_method.proposal_put,
+    aws_api_gateway_integration.proposal_put,
+    aws_api_gateway_method.proposal_delete,
+    aws_api_gateway_integration.proposal_delete,
+    aws_api_gateway_method.proposal_options,
+    aws_api_gateway_integration.proposal_options,
+    aws_api_gateway_method_response.proposal_options,
+    aws_api_gateway_integration_response.proposal_options,
+    aws_api_gateway_method.proposals_options,
+    aws_api_gateway_integration.proposals_options,
+    aws_api_gateway_method_response.proposals_options,
+    aws_api_gateway_integration_response.proposals_options
   ]
 
   lifecycle {
@@ -1654,5 +2036,7 @@ output "dynamodb_tables" {
     faqs            = aws_dynamodb_table.faqs.name
     knowledge       = aws_dynamodb_table.knowledge.name
     sales_processes = aws_dynamodb_table.sales_processes.name
+    company_profiles = aws_dynamodb_table.company_profiles.name
+    proposals       = aws_dynamodb_table.proposals.name
   }
 } 

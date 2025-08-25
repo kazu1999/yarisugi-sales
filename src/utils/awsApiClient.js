@@ -51,7 +51,7 @@ class AwsApiClient {
           ...defaultHeaders,
           ...options.headers
         },
-        body: options.body
+        body: options.body ? (typeof options.body === 'string' ? options.body : JSON.stringify(options.body)) : undefined
       };
 
       const url = `${this.baseUrl}${endpoint}`;

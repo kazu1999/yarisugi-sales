@@ -20,6 +20,7 @@ import { useKnowledgeManagement } from './hooks/useKnowledgeManagement';
 import { snsStatusOptions } from './utils/constants';
 import KnowledgeManager from './components/knowledge/KnowledgeManager';
 import RagSearch from './components/knowledge/RagSearch';
+import CompanyProfileTab from './components/company/CompanyProfileTab';
 // import CustomerDetail from './components/customer/CustomerDetail';
 
 const YarisugiDashboard = () => {
@@ -1991,130 +1992,7 @@ const YarisugiDashboard = () => {
                 <p className="text-gray-600 mt-2">自社の基本情報と提案内容を管理します</p>
               </div>
 
-              <div className="bg-white rounded-xl shadow-sm p-6">
-                <form className="space-y-8">
-                  {/* 自社情報 */}
-                  <div>
-                    <h2 className="text-xl font-semibold text-gray-900 mb-6 pb-2 border-b-2 border-gray-200">自社情報</h2>
-                    
-                    <div className="space-y-6">
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">自社名</label>
-                        <input 
-                          type="text" 
-                          placeholder="例：株式会社SKYVILLAGE"
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">自己紹介文（あいさつ文）</label>
-                        <textarea 
-                          rows="3" 
-                          placeholder="例：私たちは◯◯業界に特化した業務改善サービスを提供しています..."
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-vertical"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">サービス構成</label>
-                        <textarea 
-                          rows="2" 
-                          placeholder="例：Yarisugi事務DX、広告DX、営業支援、自動レポート作成など"
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-vertical"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">過去の導入実績・事例</label>
-                        <textarea 
-                          rows="2" 
-                          placeholder="例：◯◯工務店様での導入により、見積もり作成時間を50%短縮"
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-vertical"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 提案内容 */}
-                  <div>
-                    <h2 className="text-xl font-semibold text-gray-900 mb-6 pb-2 border-b-2 border-gray-200">提案内容</h2>
-                    
-                    <div className="space-y-6">
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">提案目的</label>
-                        <input 
-                          type="text" 
-                          placeholder="例：営業効率の改善、CV率向上、現場情報の一元化など"
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        />
-                      </div>
-                      
-                      <div className="grid md:grid-cols-2 gap-6">
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">提案内容（1）</label>
-                          <input 
-                            type="text" 
-                            placeholder="例：Yarisugi営業の導入による顧客対応の自動化"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                          />
-                        </div>
-                        
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">想定金額（1）</label>
-                          <input 
-                            type="text" 
-                            placeholder="例：月額10万円＋初期費用25万円"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                          />
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">提案資料URL（1）</label>
-                        <input 
-                          type="url" 
-                          placeholder="例：https://drive.google.com/file/d/xxxxx/view"
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        />
-                      </div>
-                      
-                      <div className="grid md:grid-cols-2 gap-6">
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">提案内容（2）</label>
-                          <input 
-                            type="text" 
-                            placeholder="例：レポート自動生成ツールの提供による提案書作成時間の短縮"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                          />
-                        </div>
-                        
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">想定金額（2）</label>
-                          <input 
-                            type="text" 
-                            placeholder="例：月額3万円＋初期費用10万円"
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                          />
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">提案資料URL（2）</label>
-                        <input 
-                          type="url" 
-                          placeholder="例：https://drive.google.com/file/d/yyyyy/view"
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-6">
-                    <Button type="submit" size="md">保存する</Button>
-                  </div>
-                </form>
-              </div>
+              <CompanyProfileTab />
             </div>
           )}
 
