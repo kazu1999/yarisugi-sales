@@ -71,6 +71,11 @@ Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。AI�
 - **SK**: `PROPOSAL#{proposalId}`
 - **属性**: title, purpose, content, estimatedCost, documentUrl, order, createdAt, updatedAt
 
+#### メール接続テーブル (`yarisugi-sales-email-connections-dev`) ✅ 新規追加
+- **PK**: `USER#{userId}`
+- **SK**: `EMAIL_CONNECTION#{connectionId}`
+- **属性**: emailAddress, imapServer, imapPort, useSSL, isActive, createdAt, updatedAt
+
 ## API Gateway
 
 ### エンドポイント一覧
@@ -123,6 +128,22 @@ Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。AI�
 - **メモリ**: 256MB
 - **タイムアウト**: 30秒
 - **機能**: Webサイト分析、包括的顧客分析、営業戦略提案
+
+#### メール管理 (`yarisugi-sales-email-manager-dev`) ✅ 新規追加
+- `POST /email/test-connection` - メール接続テスト
+- `POST /email/save-connection` - メール接続保存
+- `GET /email/connections` - メール接続一覧取得
+- `DELETE /email/connections/{connectionId}` - メール接続削除
+- **メモリ**: 128MB
+- **タイムアウト**: 30秒
+- **機能**: IMAP接続テスト、接続情報管理
+
+#### メール取得 (`yarisugi-sales-email-fetcher-dev`) ✅ 新規追加
+- `GET /email/messages` - メール一覧取得（最新10件）
+- `GET /email/messages/{messageId}` - メール詳細取得
+- **メモリ**: 256MB
+- **タイムアウト**: 30秒
+- **機能**: IMAPメール取得、詳細表示
 
 ### CORS設定
 - **許可オリジン**: `*`（全オリジン許可）
@@ -184,6 +205,20 @@ Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。AI�
 - **タイムアウト**: 30秒
 - **依存関係**: boto3, requests==2.31.0, beautifulsoup4==4.12.2
 - **機能**: Webサイト分析、AI顧客分析、営業戦略提案
+
+### メール管理Lambda ✅ 新規追加
+- **ランタイム**: Python 3.11
+- **メモリ**: 128MB
+- **タイムアウト**: 30秒
+- **依存関係**: boto3, imaplib, email
+- **機能**: IMAP接続テスト、接続情報のCRUD操作
+
+### メール取得Lambda ✅ 新規追加
+- **ランタイム**: Python 3.11
+- **メモリ**: 256MB
+- **タイムアウト**: 30秒
+- **依存関係**: boto3, imaplib, email
+- **機能**: IMAPメール取得、メール詳細表示
 
 ## ストレージ
 
@@ -391,7 +426,92 @@ Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。AI�
 - **メモリ使用量**: 3008MB
 
 ## 最終更新
-2025年8月25日
+2025年8月26日
 
 ## バージョン
-v3.4.0
+v3.5.0
+
+## AIメール機能 ✅ 新規追加
+
+### 概要
+IMAP接続によるメール取得・管理機能です。Gmail等のメールサーバーに安全に接続し、メールの一覧表示と詳細表示を行います。
+
+### 機能特徴
+- **IMAP接続**: Gmail等のメールサーバーへの安全な接続
+- **メール取得**: 最新10件のメールを高速取得（パフォーマンス最適化）
+- **メール詳細表示**: 個別メールの内容・添付ファイル表示
+- **複数アカウント対応**: 複数のメールアカウントを同時管理
+- **セキュア接続**: SSL/TLS対応の安全なメール接続
+- **Gmail対応**: Gmailアプリパスワードによる安全な接続
+
+### 技術仕様
+
+#### IMAP接続機能
+- **imaplib**: Python標準ライブラリによるIMAP接続
+- **SSL/TLS対応**: 安全な暗号化通信
+- **接続テスト**: 接続前に認証情報の検証
+- **エラーハンドリング**: 接続失敗時の適切な処理
+- **タイムアウト**: 10秒のタイムアウトでレスポンス性を確保
+
+#### メール取得機能
+- **最新10件表示**: パフォーマンス最適化のため最新10件のみ取得
+- **メール詳細**: 件名、送信者、日時、本文、添付ファイル情報
+- **HTML/プレーンテキスト対応**: 両形式のメール本文に対応
+- **文字エンコーディング**: 適切な文字エンコーディング処理
+
+### API仕様
+
+#### メール接続管理
+- **POST /email/test-connection**: メール接続テスト
+- **POST /email/save-connection**: メール接続保存
+- **GET /email/connections**: メール接続一覧取得
+- **DELETE /email/connections/{connectionId}**: メール接続削除
+
+#### メール取得
+- **GET /email/messages**: メール一覧取得（最新10件）
+- **GET /email/messages/{messageId}**: メール詳細取得
+
+#### リクエスト形式（接続テスト）
+```json
+{
+  "email": "user@gmail.com",
+  "password": "app-password",
+  "imapServer": "imap.gmail.com",
+  "imapPort": 993,
+  "useSSL": true
+}
+```
+
+#### レスポンス形式（メール一覧）
+```json
+{
+  "success": true,
+  "emails": [
+    {
+      "messageId": "message-id",
+      "subject": "メール件名",
+      "from": "送信者",
+      "date": "2025-08-26T12:00:00Z",
+      "hasAttachments": false
+    }
+  ]
+}
+```
+
+### 処理フロー
+1. **接続テスト**: ユーザーが入力した認証情報でIMAP接続をテスト
+2. **接続保存**: 接続成功時に認証情報をDynamoDBに安全に保存
+3. **メール取得**: 保存された接続情報を使用してメールを取得
+4. **メール表示**: フロントエンドでメール一覧・詳細を表示
+
+### セキュリティ
+- **アプリパスワード**: Gmail等のアプリパスワードによる安全な認証
+- **DynamoDB暗号化**: 接続情報の暗号化保存
+- **SSL/TLS**: すべての通信の暗号化
+- **タイムアウト**: 適切なタイムアウト設定
+
+### パフォーマンス最適化
+- **最新10件表示**: 全メール取得による遅延を回避
+- **非同期処理**: フロントエンドでの非同期メール取得
+- **キャッシュ**: 接続情報の効率的な管理
+- **エラーハンドリング**: 接続失敗時の適切な処理

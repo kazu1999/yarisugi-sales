@@ -370,6 +370,40 @@ resource "aws_dynamodb_table" "proposals" {
   }
 }
 
+# メール接続テーブル
+resource "aws_dynamodb_table" "email_connections" {
+  name           = "${var.project_name}-email-connections-${var.environment}"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "PK"
+  range_key      = "SK"
+
+  attribute {
+    name = "PK"
+    type = "S"
+  }
+
+  attribute {
+    name = "SK"
+    type = "S"
+  }
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name     = "UserIdIndex"
+    hash_key = "userId"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
 # Cognito User Pool
 resource "aws_cognito_user_pool" "main" {
   name = "${var.project_name}-user-pool-${var.environment}"
@@ -460,7 +494,8 @@ resource "aws_iam_role_policy" "lambda_policy" {
           aws_dynamodb_table.knowledge_vectors.arn,
           aws_dynamodb_table.sales_processes.arn,
           aws_dynamodb_table.company_profiles.arn,
-          aws_dynamodb_table.proposals.arn
+          aws_dynamodb_table.proposals.arn,
+          aws_dynamodb_table.email_connections.arn
         ]
       },
       {
@@ -800,13 +835,13 @@ resource "aws_lambda_permission" "faqs_api" {
 
 # AI生成Lambda関数
 resource "aws_lambda_function" "ai_generator" {
-  filename         = "lambda_functions/ai_generator_lambda.zip"
+  filename         = "../lambda_functions/ai_generator/ai_generator_lambda.zip"
   function_name    = "yarisugi-ai-generator"
   role            = aws_iam_role.lambda_role.arn
   handler         = "ai_generator.lambda_handler"
   runtime         = "python3.11"
   timeout         = 60
-  source_code_hash = filebase64sha256("lambda_functions/ai_generator_lambda.zip")
+  source_code_hash = filebase64sha256("../lambda_functions/ai_generator/ai_generator_lambda.zip")
 
   environment {
     variables = {
@@ -1138,6 +1173,24 @@ resource "aws_lambda_permission" "customer_report" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
 }
 
+# メール接続管理Lambdaの権限
+resource "aws_lambda_permission" "email_manager" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.email_manager.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
+# メール取得Lambdaの権限
+resource "aws_lambda_permission" "email_fetcher" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.email_fetcher.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
 # Lambda関数の環境変数設定
 resource "aws_lambda_function" "customers_api" {
   filename         = "../lambda_functions/customers_lambda/customers_lambda.zip"
@@ -1352,6 +1405,52 @@ resource "aws_lambda_function" "customer_report" {
   }
 }
 
+# メール接続管理Lambda関数
+resource "aws_lambda_function" "email_manager" {
+  filename         = "../lambda_functions/email_manager/email_manager_lambda.zip"
+  function_name    = "${var.project_name}-email-manager-${var.environment}"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "email_manager.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 30
+  memory_size     = 256
+  source_code_hash = filebase64sha256("../lambda_functions/email_manager/email_manager_lambda.zip")
+
+  environment {
+    variables = {
+      EMAIL_CONNECTIONS_TABLE = aws_dynamodb_table.email_connections.name
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# メール取得Lambda関数
+resource "aws_lambda_function" "email_fetcher" {
+  filename         = "../lambda_functions/email_fetcher/email_fetcher_lambda.zip"
+  function_name    = "${var.project_name}-email-fetcher-${var.environment}"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "email_fetcher.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 60
+  memory_size     = 512
+  source_code_hash = filebase64sha256("../lambda_functions/email_fetcher/email_fetcher_lambda.zip")
+
+  environment {
+    variables = {
+      EMAIL_CONNECTIONS_TABLE = aws_dynamodb_table.email_connections.name
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
 # ナレッジ管理API リソース
 resource "aws_api_gateway_resource" "knowledge" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -1406,6 +1505,55 @@ resource "aws_api_gateway_resource" "proposal_item" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.proposals.id
   path_part   = "{proposalId}"
+}
+
+# メール接続管理API リソース
+resource "aws_api_gateway_resource" "email" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "email"
+}
+
+# メール接続テストAPI リソース
+resource "aws_api_gateway_resource" "email_test_connection" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.email.id
+  path_part   = "test-connection"
+}
+
+# メール接続保存API リソース
+resource "aws_api_gateway_resource" "email_save_connection" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.email.id
+  path_part   = "save-connection"
+}
+
+# メール接続一覧API リソース
+resource "aws_api_gateway_resource" "email_connections" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.email.id
+  path_part   = "connections"
+}
+
+# 個別メール接続API リソース
+resource "aws_api_gateway_resource" "email_connection_item" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.email_connections.id
+  path_part   = "{connectionId}"
+}
+
+# メール一覧API リソース
+resource "aws_api_gateway_resource" "email_messages" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.email.id
+  path_part   = "messages"
+}
+
+# 個別メール詳細API リソース
+resource "aws_api_gateway_resource" "email_message_item" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.email_messages.id
+  path_part   = "{messageId}"
 }
 
 # ナレッジ管理API メソッド
@@ -2038,6 +2186,398 @@ resource "aws_api_gateway_integration_response" "s3_presigned_url_options" {
   }
 }
 
+# メール接続テストAPI メソッド
+resource "aws_api_gateway_method" "email_test_connection_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.email_test_connection.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "email_test_connection_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.email_test_connection.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# メール接続保存API メソッド
+resource "aws_api_gateway_method" "email_save_connection_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.email_save_connection.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "email_save_connection_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.email_save_connection.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# メール接続一覧API メソッド
+resource "aws_api_gateway_method" "email_connections_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.email_connections.id
+  http_method   = "GET"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "email_connections_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.email_connections.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# 個別メール接続削除API メソッド
+resource "aws_api_gateway_method" "email_connection_delete" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.email_connection_item.id
+  http_method   = "DELETE"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "email_connection_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.email_connection_item.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# メール一覧API メソッド
+resource "aws_api_gateway_method" "email_messages_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.email_messages.id
+  http_method   = "GET"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "email_messages_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.email_messages.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# 個別メール詳細API メソッド
+resource "aws_api_gateway_method" "email_message_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.email_message_item.id
+  http_method   = "GET"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "email_message_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.email_message_item.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# メール接続テストAPI インテグレーション
+resource "aws_api_gateway_integration" "email_test_connection_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_test_connection.id
+  http_method = aws_api_gateway_method.email_test_connection_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.email_manager.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "email_test_connection_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_test_connection.id
+  http_method = aws_api_gateway_method.email_test_connection_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# メール接続保存API インテグレーション
+resource "aws_api_gateway_integration" "email_save_connection_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_save_connection.id
+  http_method = aws_api_gateway_method.email_save_connection_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.email_manager.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "email_save_connection_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_save_connection.id
+  http_method = aws_api_gateway_method.email_save_connection_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# メール接続一覧API インテグレーション
+resource "aws_api_gateway_integration" "email_connections_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_connections.id
+  http_method = aws_api_gateway_method.email_connections_get.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.email_manager.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "email_connections_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_connections.id
+  http_method = aws_api_gateway_method.email_connections_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# 個別メール接続削除API インテグレーション
+resource "aws_api_gateway_integration" "email_connection_delete" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_connection_item.id
+  http_method = aws_api_gateway_method.email_connection_delete.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.email_manager.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "email_connection_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_connection_item.id
+  http_method = aws_api_gateway_method.email_connection_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# メール一覧API インテグレーション
+resource "aws_api_gateway_integration" "email_messages_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_messages.id
+  http_method = aws_api_gateway_method.email_messages_get.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.email_fetcher.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "email_messages_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_messages.id
+  http_method = aws_api_gateway_method.email_messages_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# 個別メール詳細API インテグレーション
+resource "aws_api_gateway_integration" "email_message_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_message_item.id
+  http_method = aws_api_gateway_method.email_message_get.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.email_fetcher.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "email_message_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_message_item.id
+  http_method = aws_api_gateway_method.email_message_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# メール関連のメソッドレスポンス
+resource "aws_api_gateway_method_response" "email_test_connection_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_test_connection.id
+  http_method = aws_api_gateway_method.email_test_connection_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_method_response" "email_save_connection_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_save_connection.id
+  http_method = aws_api_gateway_method.email_save_connection_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_method_response" "email_connections_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_connections.id
+  http_method = aws_api_gateway_method.email_connections_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_method_response" "email_connection_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_connection_item.id
+  http_method = aws_api_gateway_method.email_connection_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_method_response" "email_messages_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_messages.id
+  http_method = aws_api_gateway_method.email_messages_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_method_response" "email_message_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_message_item.id
+  http_method = aws_api_gateway_method.email_message_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# メール関連のインテグレーションレスポンス
+resource "aws_api_gateway_integration_response" "email_test_connection_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_test_connection.id
+  http_method = aws_api_gateway_method.email_test_connection_options.http_method
+  status_code = aws_api_gateway_method_response.email_test_connection_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+resource "aws_api_gateway_integration_response" "email_save_connection_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_save_connection.id
+  http_method = aws_api_gateway_method.email_save_connection_options.http_method
+  status_code = aws_api_gateway_method_response.email_save_connection_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+resource "aws_api_gateway_integration_response" "email_connections_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_connections.id
+  http_method = aws_api_gateway_method.email_connections_options.http_method
+  status_code = aws_api_gateway_method_response.email_connections_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+resource "aws_api_gateway_integration_response" "email_connection_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_connection_item.id
+  http_method = aws_api_gateway_method.email_connection_options.http_method
+  status_code = aws_api_gateway_method_response.email_connection_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+resource "aws_api_gateway_integration_response" "email_messages_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_messages.id
+  http_method = aws_api_gateway_method.email_messages_options.http_method
+  status_code = aws_api_gateway_method_response.email_messages_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+resource "aws_api_gateway_integration_response" "email_message_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_message_item.id
+  http_method = aws_api_gateway_method.email_message_options.http_method
+  status_code = aws_api_gateway_method_response.email_message_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
 # API Gateway Deployment
 resource "aws_api_gateway_deployment" "main" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -2114,8 +2654,50 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_method_response.proposals_options,
     aws_api_gateway_integration_response.proposals_options,
     aws_api_gateway_method.customer_report_post,
-    aws_api_gateway_integration.customer_report_post
-  ]
+    aws_api_gateway_integration.customer_report_post,
+    # メール関連のリソース
+    aws_api_gateway_method.email_test_connection_post,
+    aws_api_gateway_integration.email_test_connection_post,
+    aws_api_gateway_method.email_test_connection_options,
+    aws_api_gateway_integration.email_test_connection_options,
+    aws_api_gateway_method_response.email_test_connection_options,
+    aws_api_gateway_integration_response.email_test_connection_options,
+    aws_api_gateway_method.email_save_connection_post,
+    aws_api_gateway_integration.email_save_connection_post,
+    aws_api_gateway_method.email_save_connection_options,
+    aws_api_gateway_integration.email_save_connection_options,
+    aws_api_gateway_method_response.email_save_connection_options,
+    aws_api_gateway_integration_response.email_save_connection_options,
+    aws_api_gateway_method.email_connections_get,
+    aws_api_gateway_integration.email_connections_get,
+    aws_api_gateway_method.email_connections_options,
+    aws_api_gateway_integration.email_connections_options,
+    aws_api_gateway_method_response.email_connections_options,
+    aws_api_gateway_integration_response.email_connections_options,
+    aws_api_gateway_method.email_connection_delete,
+    aws_api_gateway_integration.email_connection_delete,
+    aws_api_gateway_method.email_connection_options,
+    aws_api_gateway_integration.email_connection_options,
+    aws_api_gateway_method_response.email_connection_options,
+    aws_api_gateway_integration_response.email_connection_options,
+    aws_api_gateway_method.email_messages_get,
+    aws_api_gateway_integration.email_messages_get,
+    aws_api_gateway_method.email_messages_options,
+    aws_api_gateway_integration.email_messages_options,
+    aws_api_gateway_method_response.email_messages_options,
+    aws_api_gateway_integration_response.email_messages_options,
+    aws_api_gateway_method.email_message_get,
+    aws_api_gateway_integration.email_message_get,
+    aws_api_gateway_method.email_message_options,
+    aws_api_gateway_integration.email_message_options,
+    aws_api_gateway_method_response.email_message_options,
+    aws_api_gateway_integration_response.email_message_options,
+    aws_api_gateway_integration_response.email_test_connection_options,
+    aws_api_gateway_integration_response.email_save_connection_options,
+    aws_api_gateway_integration_response.email_connections_options,
+    aws_api_gateway_integration_response.email_connection_options,
+    aws_api_gateway_integration_response.email_messages_options,
+        ]
 
   lifecycle {
     create_before_destroy = true
@@ -2144,5 +2726,6 @@ output "dynamodb_tables" {
     sales_processes = aws_dynamodb_table.sales_processes.name
     company_profiles = aws_dynamodb_table.company_profiles.name
     proposals       = aws_dynamodb_table.proposals.name
+    email_connections = aws_dynamodb_table.email_connections.name
   }
 } 

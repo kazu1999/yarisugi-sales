@@ -54,7 +54,13 @@ class AwsApiClient {
         body: options.body ? (typeof options.body === 'string' ? options.body : JSON.stringify(options.body)) : undefined
       };
 
-      const url = `${this.baseUrl}${endpoint}`;
+      // クエリパラメータを処理
+      let url = `${this.baseUrl}${endpoint}`;
+      if (options.params) {
+        const queryString = new URLSearchParams(options.params).toString();
+        url += `?${queryString}`;
+      }
+      
       console.log('🌐 API Request:', { url, method: config.method, hasAuth: !!token });
       console.log('🔑 Authorization Header:', token ? `${token.substring(0, 20)}...` : 'なし');
       if (config.body) {

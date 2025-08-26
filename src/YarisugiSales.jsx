@@ -21,6 +21,9 @@ import { snsStatusOptions } from './utils/constants';
 import KnowledgeManager from './components/knowledge/KnowledgeManager';
 import RagSearch from './components/knowledge/RagSearch';
 import CompanyProfileTab from './components/company/CompanyProfileTab';
+import EmailConnectionModal from './components/modals/EmailConnectionModal';
+import EmailListModal from './components/modals/EmailListModal';
+import EmailDetailModal from './components/modals/EmailDetailModal';
 // import CustomerDetail from './components/customer/CustomerDetail';
 
 const YarisugiDashboard = () => {
@@ -142,6 +145,13 @@ const YarisugiDashboard = () => {
   const [showAddDatabase, setShowAddDatabase] = useState(false);
   const [aiModalJustOpened, setAiModalJustOpened] = useState(false);
   
+  // メール機能用の状態
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [showEmailListModal, setShowEmailListModal] = useState(false);
+  const [showEmailDetailModal, setShowEmailDetailModal] = useState(false);
+  const [selectedEmail, setSelectedEmail] = useState(null);
+  const [selectedConnection, setSelectedConnection] = useState(null);
+  
   // AIファイルアップロード用の状態
   const [aiUploadedFile, setAiUploadedFile] = useState(null);
   const [aiFileContent, setAiFileContent] = useState('');
@@ -188,6 +198,24 @@ const YarisugiDashboard = () => {
     } finally {
       setAiFileProcessing(false);
     }
+  };
+
+  // メール機能用のハンドラー
+  const handleEmailConnectionSuccess = (connectionId) => {
+    console.log('Email connection saved:', connectionId);
+    // 必要に応じて追加の処理を実装
+  };
+
+  const handleEmailSelect = (email, connection) => {
+    setSelectedEmail(email);
+    setSelectedConnection(connection);
+    setShowEmailListModal(false);
+    setShowEmailDetailModal(true);
+  };
+
+  const handleBackToEmailList = () => {
+    setShowEmailDetailModal(false);
+    setShowEmailListModal(true);
   };
 
   // テキストファイル読み込み
@@ -890,6 +918,7 @@ const YarisugiDashboard = () => {
         <div className="w-48 sm:w-64 lg:w-72 bg-slate-800 text-slate-200 py-6 overflow-y-auto flex-shrink-0">
           <NavItem label="トップページ" page="top" active={activePage === 'top'} onClick={setActivePage} />
           <NavItem label="顧客一覧" page="customers" active={activePage === 'customers'} onClick={setActivePage} />
+          <NavItem label="AIメール" page="email" active={activePage === 'email'} onClick={setActivePage} />
           <NavItem label="FAQ設定" page="faq" active={activePage === 'faq'} onClick={setActivePage} />
           <NavItem label="ナレッジDB" page="database" active={activePage === 'database'} onClick={setActivePage} />
           <NavItem label="基本情報入力" page="profile" active={activePage === 'profile'} onClick={setActivePage} />
@@ -1198,6 +1227,63 @@ const YarisugiDashboard = () => {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {activePage === 'email' && (
+            <div>
+              <div className="mb-6">
+                <h1 className="text-2xl font-bold text-gray-900">AIメール</h1>
+                <p className="text-gray-600 mt-2">メールアカウントの接続とメール管理</p>
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex gap-3 items-center">
+                    <Button 
+                      onClick={() => setShowEmailModal(true)}
+                      className="flex items-center gap-2"
+                    >
+                      <Mail className="w-4 h-4" />
+                      メール接続
+                    </Button>
+                    <Button 
+                      onClick={() => setShowEmailListModal(true)}
+                      className="flex items-center gap-2"
+                    >
+                      <Mail className="w-4 h-4" />
+                      メール一覧
+                    </Button>
+                  </div>
+                </div>
+                
+                <div className="p-6">
+                  <div className="text-center py-12">
+                    <Mail className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">メール機能</h3>
+                    <p className="text-gray-600 mb-6">
+                      メールアカウントを接続して、メールの一覧表示や詳細確認ができます。
+                    </p>
+                    <div className="flex justify-center gap-4">
+                      <Button 
+                        onClick={() => setShowEmailModal(true)}
+                        className="flex items-center gap-2"
+                      >
+                        <Mail className="w-4 h-4" />
+                        メール接続設定
+                      </Button>
+                      <Button 
+                        onClick={() => setShowEmailListModal(true)}
+                        variant="outline"
+                        className="flex items-center gap-2"
+                      >
+                        <Mail className="w-4 h-4" />
+                        メール一覧表示
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -3077,6 +3163,29 @@ ${selectedProcess.name}の件でご連絡させていただきました。
               performRagSearch={performRagSearch}
             />
           )}
+
+          {/* メール接続モーダル */}
+          <EmailConnectionModal
+            isOpen={showEmailModal}
+            onClose={() => setShowEmailModal(false)}
+            onConnectionSuccess={handleEmailConnectionSuccess}
+          />
+
+          {/* メール一覧モーダル */}
+          <EmailListModal
+            isOpen={showEmailListModal}
+            onClose={() => setShowEmailListModal(false)}
+            onEmailSelect={handleEmailSelect}
+          />
+
+          {/* メール詳細モーダル */}
+          <EmailDetailModal
+            isOpen={showEmailDetailModal}
+            onClose={() => setShowEmailDetailModal(false)}
+            email={selectedEmail}
+            connection={selectedConnection}
+            onBack={handleBackToEmailList}
+          />
         </div>
       </div>
     </div>

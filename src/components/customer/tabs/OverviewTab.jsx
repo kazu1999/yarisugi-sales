@@ -71,6 +71,8 @@ const OverviewTab = ({
     }
   };
 
+
+
   return (
     <div className="max-w-4xl mx-auto">
       {/* 保存メッセージ */}
@@ -245,6 +247,7 @@ const OverviewTab = ({
             <Download className="w-4 h-4 mr-2" />
             レポート抽出
           </Button>
+
         </div>
       </div>
 
@@ -335,6 +338,8 @@ const OverviewTab = ({
         customerData={selectedCustomer}
         companyProfile={companyProfile}
       />
+
+
     </div>
   );
 };
