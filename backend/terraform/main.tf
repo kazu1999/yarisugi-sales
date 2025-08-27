@@ -1448,25 +1448,24 @@ resource "aws_lambda_function" "email_manager" {
 
 # メール取得Lambda関数
 resource "aws_lambda_function" "email_fetcher" {
-  filename         = "../lambda_functions/email_fetcher/email_fetcher_lambda.zip"
-  function_name    = "${var.project_name}-email-fetcher-${var.environment}"
+  filename         = "../lambda_functions/email_fetcher/email_fetcher_optimized.zip"
+  function_name    = "yarisugi-sales-email-fetcher-dev"
   role            = aws_iam_role.lambda_role.arn
-  handler         = "email_fetcher.lambda_handler"
+  handler         = "email_fetcher_optimized.lambda_handler"
   runtime         = "python3.11"
-  timeout         = 60
-  memory_size     = 512
-  source_code_hash = filebase64sha256("../lambda_functions/email_fetcher/email_fetcher_lambda.zip")
+  timeout         = 60  # タイムアウトを60秒に延長
+  memory_size     = 512  # メモリを512MBに増加
 
   environment {
     variables = {
       EMAIL_CONNECTIONS_TABLE = aws_dynamodb_table.email_connections.name
-      CUSTOMERS_TABLE = aws_dynamodb_table.customers.name
+      CUSTOMERS_TABLE         = aws_dynamodb_table.customers.name
     }
   }
 
   tags = {
-    Environment = var.environment
-    Project     = var.project_name
+    Environment = "dev"
+    Project     = "yarisugi-sales"
   }
 }
 

@@ -68,7 +68,7 @@ def generate_query_embedding(query):
             'https://api.openai.com/v1/embeddings',
             headers=headers,
             json=data,
-            timeout=10  # 10秒タイムアウト
+            timeout=20  # 20秒タイムアウトに延長
         )
         
         if response.status_code == 200:
@@ -233,7 +233,7 @@ def generate_rag_response_optimized(query, similar_chunks, context_items):
             'https://api.openai.com/v1/chat/completions',
             headers=headers,
             json=data,
-            timeout=15  # 15秒タイムアウト
+            timeout=30  # 30秒タイムアウトに延長
         )
         
         if response.status_code == 200:
