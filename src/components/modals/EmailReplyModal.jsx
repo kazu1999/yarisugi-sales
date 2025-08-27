@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Send, User, FileText, AlertCircle } from 'lucide-react';
+import { X, Send, User, FileText, AlertCircle, Bot } from 'lucide-react';
 import { awsApiClient } from '../../utils/awsApiClient';
 
 const EmailReplyModal = ({ isOpen, onClose, originalEmail, connection, onReplySent }) => {
@@ -14,12 +14,16 @@ const EmailReplyModal = ({ isOpen, onClose, originalEmail, connection, onReplySe
 
   useEffect(() => {
     if (isOpen && originalEmail) {
-      // 返信用の初期データを設定
+      // AI返信提案がある場合はそれを使用、なければ通常の返信形式
+      const hasAiReply = originalEmail.aiReply && originalEmail.aiReply.trim();
+      
       setFormData({
         to: originalEmail.from || '',
         cc: originalEmail.cc || '',
         subject: `Re: ${originalEmail.subject || ''}`,
-        body: `\n\n--- 元のメール ---\n${originalEmail.body || ''}`
+        body: hasAiReply 
+          ? originalEmail.aiReply 
+          : `\n\n--- 元のメール ---\n${originalEmail.body || ''}`
       });
       setError('');
     }
@@ -91,6 +95,12 @@ const EmailReplyModal = ({ isOpen, onClose, originalEmail, connection, onReplySe
           <h2 className="text-xl font-semibold text-gray-900 flex items-center">
             <Send className="w-5 h-5 mr-2" />
             メール返信
+            {originalEmail?.aiReply && (
+              <span className="ml-2 text-sm bg-green-100 text-green-800 px-2 py-1 rounded-full flex items-center">
+                <Bot className="w-3 h-3 mr-1" />
+                AI提案
+              </span>
+            )}
           </h2>
           <button
             onClick={onClose}
@@ -105,6 +115,21 @@ const EmailReplyModal = ({ isOpen, onClose, originalEmail, connection, onReplySe
           <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-3 flex items-start">
             <AlertCircle className="w-5 h-5 text-red-500 mr-2 mt-0.5 flex-shrink-0" />
             <p className="text-sm text-red-700">{error}</p>
+          </div>
+        )}
+
+        {/* AI返信提案の説明 */}
+        {originalEmail?.aiReply && (
+          <div className="mb-4 bg-green-50 border border-green-200 rounded-md p-3">
+            <div className="flex items-start">
+              <Bot className="w-5 h-5 text-green-600 mr-2 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm text-green-800 font-medium">AI返信提案が適用されています</p>
+                <p className="text-xs text-green-700 mt-1">
+                  FAQデータを基に生成された返信提案です。必要に応じて編集してください。
+                </p>
+              </div>
+            </div>
           </div>
         )}
 

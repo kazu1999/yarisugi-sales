@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Mail, Calendar, User, FileText, Download, ArrowLeft, RefreshCw, Send } from 'lucide-react';
+import { X, Mail, Calendar, User, FileText, Download, ArrowLeft, RefreshCw, Send, Bot } from 'lucide-react';
 import { awsApiClient } from '../../utils/awsApiClient';
 import EmailReplyModal from './EmailReplyModal';
 
@@ -8,6 +8,9 @@ const EmailDetailModal = ({ isOpen, onClose, email, connection, onBack }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showReplyModal, setShowReplyModal] = useState(false);
+  const [aiReply, setAiReply] = useState('');
+  const [aiReplyLoading, setAiReplyLoading] = useState(false);
+  const [showAiReply, setShowAiReply] = useState(false);
 
   useEffect(() => {
     if (isOpen && email && connection) {
@@ -38,6 +41,43 @@ const EmailDetailModal = ({ isOpen, onClose, email, connection, onBack }) => {
       console.error('Fetch email detail error:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const generateAiReply = async () => {
+    if (!emailDetail) return;
+
+    setAiReplyLoading(true);
+    setError('');
+
+    try {
+      // メール内容を準備
+      const emailContent = `
+件名: ${emailDetail.subject || '(件名なし)'}
+送信者: ${emailDetail.from}
+本文:
+${emailDetail.body || ''}
+      `.trim();
+
+      const response = await awsApiClient.request('/email/ai-reply', {
+        method: 'POST',
+        body: JSON.stringify({
+          emailContent: emailContent,
+          userContext: ''
+        })
+      });
+
+      if (response.success) {
+        setAiReply(response.aiReply);
+        setShowAiReply(true);
+      } else {
+        setError(response.error || 'AI返信の生成に失敗しました。');
+      }
+    } catch (err) {
+      setError('AI返信の生成中にエラーが発生しました。');
+      console.error('Generate AI reply error:', err);
+    } finally {
+      setAiReplyLoading(false);
     }
   };
 
@@ -109,6 +149,14 @@ const EmailDetailModal = ({ isOpen, onClose, email, connection, onBack }) => {
           </div>
           <div className="flex items-center space-x-2">
             <button
+              onClick={generateAiReply}
+              disabled={aiReplyLoading || !emailDetail}
+              className="flex items-center px-3 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50"
+            >
+              <Bot className="w-4 h-4 mr-1" />
+              {aiReplyLoading ? 'AI生成中...' : 'AI返信提案'}
+            </button>
+            <button
               onClick={() => setShowReplyModal(true)}
               className="flex items-center px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
             >
@@ -136,6 +184,43 @@ const EmailDetailModal = ({ isOpen, onClose, email, connection, onBack }) => {
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-3">
             <p className="text-sm text-red-700">{error}</p>
+          </div>
+        )}
+
+        {/* AI返信提案 */}
+        {showAiReply && aiReply && (
+          <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-medium text-green-900 flex items-center">
+                <Bot className="w-5 h-5 mr-2" />
+                AI返信提案
+              </h3>
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => {
+                    setShowReplyModal(true);
+                    // AI返信を返信モーダルに渡す
+                    if (emailDetail) {
+                      emailDetail.aiReply = aiReply;
+                    }
+                  }}
+                  className="text-sm bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 transition-colors"
+                >
+                  この返信を使用
+                </button>
+                <button
+                  onClick={() => setShowAiReply(false)}
+                  className="text-sm text-gray-500 hover:text-gray-700"
+                >
+                  閉じる
+                </button>
+              </div>
+            </div>
+            <div className="bg-white border border-green-300 rounded p-3">
+              <div className="whitespace-pre-wrap text-gray-900 text-sm">
+                {aiReply}
+              </div>
+            </div>
           </div>
         )}
 
