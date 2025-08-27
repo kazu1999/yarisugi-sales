@@ -11,7 +11,8 @@ import quopri
 
 # DynamoDB設定
 dynamodb = boto3.resource('dynamodb')
-email_connections_table = dynamodb.Table(os.environ.get('EMAIL_CONNECTIONS_TABLE', 'EmailConnections'))
+email_connections_table = dynamodb.Table(os.environ.get('EMAIL_CONNECTIONS_TABLE', 'yarisugi-sales-email-connections-dev'))
+customers_table = dynamodb.Table(os.environ.get('CUSTOMERS_TABLE', 'yarisugi-sales-customers-dev'))
 
 def create_response(status_code, body):
     """API Gatewayレスポンスを作成"""
@@ -52,6 +53,30 @@ def get_connection_info(user_id, connection_id):
         return response['Item']
     except Exception as e:
         raise Exception(f"接続情報の取得に失敗しました: {str(e)}")
+
+def get_customer_emails(user_id):
+    """顧客テーブルからメールアドレスのリストを取得"""
+    try:
+        response = customers_table.query(
+            KeyConditionExpression='PK = :pk',
+            ExpressionAttributeValues={
+                ':pk': f'USER#{user_id}'
+            }
+        )
+        
+        customer_emails = []
+        for item in response.get('Items', []):
+            # 顧客のメールアドレスを取得
+            email = item.get('email', '')
+            if email:
+                customer_emails.append(email.lower().strip())
+        
+        print(f"DEBUG: Found {len(customer_emails)} customer emails: {customer_emails}")
+        print(f"DEBUG: Raw customer data: {response.get('Items', [])}")
+        return customer_emails
+    except Exception as e:
+        print(f"DEBUG: Error getting customer emails: {str(e)}")
+        return []
 
 def decode_email_header(header_value):
     """メールヘッダーをデコード"""
@@ -113,8 +138,35 @@ def get_email_body(msg):
     
     return body
 
-def fetch_email_list(connection_info, folder='INBOX', limit=50):
-    """メール一覧を取得"""
+def extract_email_address(email_string):
+    """メールアドレス文字列からメールアドレスのみを抽出"""
+    if not email_string:
+        return ''
+    
+    # メールアドレスを抽出する正規表現的な処理
+    import re
+    email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+    matches = re.findall(email_pattern, email_string)
+    return matches[0] if matches else ''
+
+def is_customer_email(from_addr, customer_emails):
+    """顧客からのメールかどうかを判定"""
+    if not from_addr or not customer_emails:
+        print(f"DEBUG: is_customer_email - from_addr: {from_addr}, customer_emails: {customer_emails}")
+        return False
+    
+    # 送信者のメールアドレスを抽出
+    sender_email = extract_email_address(from_addr)
+    
+    print(f"DEBUG: is_customer_email - sender_email: {sender_email}, customer_emails: {customer_emails}")
+    
+    # 送信者が顧客テーブルに登録されているかチェック
+    is_customer = sender_email.lower() in customer_emails
+    print(f"DEBUG: is_customer_email - result: {is_customer}")
+    return is_customer
+
+def fetch_email_list(connection_info, customer_emails, folder='INBOX', limit=50):
+    """メール一覧を取得（顧客からのメールのみ）"""
     try:
         # IMAP接続
         if connection_info['useSSL']:
@@ -133,7 +185,18 @@ def fetch_email_list(connection_info, folder='INBOX', limit=50):
         message_list = message_numbers[0].split()
         message_list.reverse()  # 最新順
         
-        for i, num in enumerate(message_list[:limit]):
+        processed_count = 0
+        customer_email_count = 0
+        
+        for num in message_list:
+            # 処理済みの顧客メール数がlimitに達したら終了
+            if customer_email_count >= limit:
+                break
+            
+            # 処理済みメール数がlimitの3倍に達したら終了（パフォーマンス考慮）
+            if processed_count >= limit * 3:
+                break
+            
             try:
                 _, msg_data = mail.fetch(num, '(RFC822)')
                 email_body = msg_data[0][1]
@@ -144,6 +207,15 @@ def fetch_email_list(connection_info, folder='INBOX', limit=50):
                 from_addr = decode_email_header(msg.get('From', ''))
                 to_addr = decode_email_header(msg.get('To', ''))
                 date_str = msg.get('Date', '')
+                
+                # 顧客からのメールかどうかを判定
+                print(f"DEBUG: Checking email from {from_addr} against customer list")
+                if not is_customer_email(from_addr, customer_emails):
+                    print(f"DEBUG: Skipping non-customer email from {from_addr}")
+                    processed_count += 1
+                    continue
+                
+                print(f"DEBUG: Including customer email from {from_addr}")
                 
                 # 日付をパース
                 try:
@@ -166,18 +238,23 @@ def fetch_email_list(connection_info, folder='INBOX', limit=50):
                 }
                 
                 email_list.append(email_info)
+                customer_email_count += 1
+                processed_count += 1
+                print(f"DEBUG: Added customer email. Total: {customer_email_count}/{limit}")
                 
             except Exception as e:
                 print(f"メール {num} の処理中にエラー: {str(e)}")
+                processed_count += 1
                 continue
         
         mail.logout()
+        print(f"DEBUG: Final result - Total emails found: {len(email_list)}, Processed: {processed_count}")
         return email_list
         
     except Exception as e:
         raise Exception(f"メール一覧の取得に失敗しました: {str(e)}")
 
-def fetch_email_detail(connection_info, message_id, folder='INBOX'):
+def fetch_email_detail(connection_info, message_id, customer_emails, folder='INBOX'):
     """メール詳細を取得"""
     try:
         # IMAP接続
@@ -291,7 +368,12 @@ def lambda_handler(event, context):
             
             try:
                 connection_info = get_connection_info(user_id, connection_id)
-                email_detail = fetch_email_detail(connection_info, message_id, folder)
+                customer_emails = get_customer_emails(user_id)
+                email_detail = fetch_email_detail(connection_info, message_id, customer_emails, folder)
+                
+                # 顧客からのメールかどうかを確認
+                if not is_customer_email(email_detail['from'], customer_emails):
+                    return create_response(403, {'error': 'このメールは顧客からのメールではありません'})
                 
                 return create_response(200, {
                     'success': True,
@@ -315,11 +397,14 @@ def lambda_handler(event, context):
             
             try:
                 connection_info = get_connection_info(user_id, connection_id)
-                email_list = fetch_email_list(connection_info, folder, limit)
+                customer_emails = get_customer_emails(user_id)
+                email_list = fetch_email_list(connection_info, customer_emails, folder, limit)
                 
                 return create_response(200, {
                     'success': True,
-                    'emails': email_list
+                    'emails': email_list,
+                    'filtered': True,
+                    'filter_description': '顧客テーブルに登録されている顧客からのメールのみを表示しています'
                 })
             except Exception as e:
                 return create_response(500, {'error': str(e)})

@@ -8,6 +8,7 @@ const EmailListModal = ({ isOpen, onClose, onEmailSelect }) => {
   const [emails, setEmails] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [filterInfo, setFilterInfo] = useState(null);
   const { connections, fetchConnections } = useEmailConnection();
 
   useEffect(() => {
@@ -30,7 +31,7 @@ const EmailListModal = ({ isOpen, onClose, onEmailSelect }) => {
       const params = {
         connectionId: connection.connectionId,
         folder: 'INBOX',
-        limit: 10
+        limit: 30
       };
       console.log('Request params:', params); // デバッグ用
       
@@ -41,6 +42,10 @@ const EmailListModal = ({ isOpen, onClose, onEmailSelect }) => {
 
       if (response.success) {
         setEmails(response.emails || []);
+        setFilterInfo({
+          filtered: response.filtered || false,
+          description: response.filter_description || ''
+        });
       } else {
         setError(response.error || 'メール一覧の取得に失敗しました。');
       }
@@ -170,6 +175,16 @@ const EmailListModal = ({ isOpen, onClose, onEmailSelect }) => {
                 アカウント変更
               </button>
             </div>
+
+            {/* フィルタリング情報 */}
+            {filterInfo && filterInfo.filtered && (
+              <div className="mb-4 bg-blue-50 border border-blue-200 rounded-md p-3">
+                <div className="flex items-center">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
+                  <p className="text-sm text-blue-700">{filterInfo.description}</p>
+                </div>
+              </div>
+            )}
 
             {loading ? (
               <div className="flex items-center justify-center py-8">

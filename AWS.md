@@ -71,7 +71,7 @@ Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。AI�
 - **SK**: `PROPOSAL#{proposalId}`
 - **属性**: title, purpose, content, estimatedCost, documentUrl, order, createdAt, updatedAt
 
-#### メール接続テーブル (`yarisugi-sales-email-connections-dev`) ✅ 新規追加
+#### メール接続テーブル (`yarisugi-sales-email-connections-dev`) ✅ 最新版
 - **PK**: `USER#{userId}`
 - **SK**: `EMAIL_CONNECTION#{connectionId}`
 - **属性**: emailAddress, imapServer, imapPort, useSSL, isActive, createdAt, updatedAt
@@ -129,7 +129,7 @@ Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。AI�
 - **タイムアウト**: 30秒
 - **機能**: Webサイト分析、包括的顧客分析、営業戦略提案
 
-#### メール管理 (`yarisugi-sales-email-manager-dev`) ✅ 新規追加
+#### メール管理 (`yarisugi-sales-email-manager-dev`) ✅ 最新版
 - `POST /email/test-connection` - メール接続テスト
 - `POST /email/save-connection` - メール接続保存
 - `GET /email/connections` - メール接続一覧取得
@@ -138,12 +138,20 @@ Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。AI�
 - **タイムアウト**: 30秒
 - **機能**: IMAP接続テスト、接続情報管理
 
-#### メール取得 (`yarisugi-sales-email-fetcher-dev`) ✅ 新規追加
-- `GET /email/messages` - メール一覧取得（最新10件）
-- `GET /email/messages/{messageId}` - メール詳細取得
+#### メール取得 (`yarisugi-sales-email-fetcher-dev`) ✅ 最新版（顧客フィルタリング対応）
+- `GET /email/messages` - メール一覧取得（顧客フィルタリング対応、最新30件）
+- `GET /email/messages/{messageId}` - メール詳細取得（顧客メールのみ）
 - **メモリ**: 256MB
 - **タイムアウト**: 30秒
-- **機能**: IMAPメール取得、詳細表示
+- **機能**: IMAPメール取得、顧客フィルタリング、詳細表示
+- **環境変数**: `EMAIL_CONNECTIONS_TABLE`, `CUSTOMERS_TABLE`
+
+#### メール送信 (`yarisugi-sales-email-sender-dev`) ✅ 新規追加
+- `POST /email/send` - メール送信（返信機能）
+- **メモリ**: 128MB
+- **タイムアウト**: 30秒
+- **機能**: SMTP送信、返信機能
+- **環境変数**: `EMAIL_CONNECTIONS_TABLE`
 
 ### CORS設定
 - **許可オリジン**: `*`（全オリジン許可）
@@ -206,19 +214,29 @@ Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。AI�
 - **依存関係**: boto3, requests==2.31.0, beautifulsoup4==4.12.2
 - **機能**: Webサイト分析、AI顧客分析、営業戦略提案
 
-### メール管理Lambda ✅ 新規追加
+### メール管理Lambda ✅ 最新版
 - **ランタイム**: Python 3.11
 - **メモリ**: 128MB
 - **タイムアウト**: 30秒
 - **依存関係**: boto3, imaplib, email
 - **機能**: IMAP接続テスト、接続情報のCRUD操作
 
-### メール取得Lambda ✅ 新規追加
+### メール取得Lambda ✅ 最新版（顧客フィルタリング対応）
 - **ランタイム**: Python 3.11
 - **メモリ**: 256MB
 - **タイムアウト**: 30秒
 - **依存関係**: boto3, imaplib, email
-- **機能**: IMAPメール取得、メール詳細表示
+- **機能**: IMAPメール取得、顧客フィルタリング、メール詳細表示
+- **環境変数**: `EMAIL_CONNECTIONS_TABLE`, `CUSTOMERS_TABLE`
+- **フィルタリング**: 顧客テーブルに登録されている顧客からのメールのみ表示
+
+### メール送信Lambda ✅ 新規追加
+- **ランタイム**: Python 3.11
+- **メモリ**: 128MB
+- **タイムアウト**: 30秒
+- **依存関係**: boto3, smtplib, ssl
+- **機能**: SMTP送信、メール返信機能
+- **環境変数**: `EMAIL_CONNECTIONS_TABLE`
 
 ## ストレージ
 
@@ -233,6 +251,7 @@ Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。AI�
 ### IAMロール
 - **Lambda実行ロール**: DynamoDB、CloudWatch Logs、S3アクセス権限
 - **AI Lambda実行ロール**: OpenAI API Key（Secrets Manager）アクセス権限
+- **メールLambda実行ロール**: 顧客テーブルアクセス権限追加 ✅ 最新版
 
 ### Secrets Manager
 - **シークレット**: `yarisugi-sales-openai-api-key-dev`
@@ -255,6 +274,127 @@ Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。AI�
 1. `terraform init`
 2. `terraform plan`
 3. `terraform apply`
+
+## AIメール機能 ✅ 最新版
+
+### 概要
+IMAP接続によるメール取得・管理機能です。Gmail等のメールサーバーに安全に接続し、顧客テーブルに登録されている顧客からのメールのみを表示し、返信機能も提供します。
+
+### 機能特徴
+- **IMAP接続**: Gmail等のメールサーバーへの安全な接続
+- **顧客フィルタリング**: 顧客テーブルに登録されている顧客からのメールのみ表示
+- **メール取得**: 最新30件のメールを高速取得（パフォーマンス最適化）
+- **メール詳細表示**: 個別メールの内容・添付ファイル表示
+- **メール返信機能**: SMTP送信による返信機能
+- **複数アカウント対応**: 複数のメールアカウントを同時管理
+- **セキュア接続**: SSL/TLS対応の安全なメール接続
+- **Gmail対応**: Gmailアプリパスワードによる安全な接続
+
+### 技術仕様
+
+#### IMAP接続機能
+- **imaplib**: Python標準ライブラリによるIMAP接続
+- **SSL/TLS対応**: 安全な暗号化通信
+- **接続テスト**: 接続前に認証情報の検証
+- **エラーハンドリング**: 接続失敗時の適切な処理
+- **タイムアウト**: 10秒のタイムアウトでレスポンス性を確保
+
+#### メール取得機能（顧客フィルタリング対応）
+- **最新30件表示**: パフォーマンス最適化のため最新30件のみ取得
+- **顧客フィルタリング**: 顧客テーブルに登録されている顧客からのメールのみ表示
+- **メール詳細**: 件名、送信者、日時、本文、添付ファイル情報
+- **HTML/プレーンテキスト対応**: 両形式のメール本文に対応
+- **文字エンコーディング**: 適切な文字エンコーディング処理
+- **セキュリティ**: 顧客メール以外へのアクセス拒否
+
+#### SMTP送信機能
+- **smtplib**: Python標準ライブラリによるSMTP送信
+- **SSL/TLS対応**: 安全な暗号化通信
+- **動的サーバー設定**: 接続情報からSMTPサーバー・ポートを自動判定
+- **返信機能**: 元のメール情報を活用した返信
+- **エラーハンドリング**: 送信失敗時の適切な処理
+
+### API仕様
+
+#### メール接続管理
+- **POST /email/test-connection**: メール接続テスト
+- **POST /email/save-connection**: メール接続保存
+- **GET /email/connections**: メール接続一覧取得
+- **DELETE /email/connections/{connectionId}**: メール接続削除
+
+#### メール取得（顧客フィルタリング対応）
+- **GET /email/messages**: メール一覧取得（顧客フィルタリング対応、最新30件）
+- **GET /email/messages/{messageId}**: メール詳細取得（顧客メールのみ）
+
+#### メール送信（返信機能）
+- **POST /email/send**: メール送信（返信機能）
+
+#### リクエスト形式（接続テスト）
+```json
+{
+  "email": "user@gmail.com",
+  "password": "app-password",
+  "imapServer": "imap.gmail.com",
+  "imapPort": 993,
+  "useSSL": true
+}
+```
+
+#### レスポンス形式（メール一覧）
+```json
+{
+  "success": true,
+  "emails": [
+    {
+      "messageId": "message-id",
+      "subject": "メール件名",
+      "from": "送信者",
+      "date": "2025-08-26T12:00:00Z",
+      "hasAttachments": false
+    }
+  ],
+  "filtered": true,
+  "filter_description": "顧客テーブルに登録されている顧客からのメールのみを表示しています"
+}
+```
+
+#### リクエスト形式（メール送信）
+```json
+{
+  "connectionId": "connection-uuid",
+  "to": "recipient@example.com",
+  "cc": "cc@example.com",
+  "subject": "Re: 件名",
+  "body": "メール本文"
+}
+```
+
+### 処理フロー
+1. **接続テスト**: ユーザーが入力した認証情報でIMAP接続をテスト
+2. **接続保存**: 接続成功時に認証情報をDynamoDBに安全に保存
+3. **顧客メール取得**: 顧客テーブルから顧客メールアドレスを取得
+4. **メールフィルタリング**: 顧客からのメールのみをフィルタリング
+5. **メール表示**: フロントエンドで顧客メール一覧・詳細を表示
+6. **メール返信**: SMTP送信による返信機能
+
+### セキュリティ
+- **アプリパスワード**: Gmail等のアプリパスワードによる安全な認証
+- **DynamoDB暗号化**: 接続情報の暗号化保存
+- **SSL/TLS**: すべての通信の暗号化
+- **タイムアウト**: 適切なタイムアウト設定
+- **顧客フィルタリング**: 顧客メール以外へのアクセス拒否
+
+### パフォーマンス最適化
+- **最新30件表示**: 全メール取得による遅延を回避
+- **顧客フィルタリング**: 不要なメールを除外した効率的な処理
+- **非同期処理**: フロントエンドでの非同期メール取得
+- **キャッシュ**: 接続情報の効率的な管理
+- **エラーハンドリング**: 接続失敗時の適切な処理
+
+### 環境変数設定
+- **email_fetcher Lambda**: `EMAIL_CONNECTIONS_TABLE`, `CUSTOMERS_TABLE`
+- **email_sender Lambda**: `EMAIL_CONNECTIONS_TABLE`
+- **IAM権限**: 顧客テーブルアクセス権限の追加
 
 ## AI顧客レポート生成機能 ✅ 新規追加
 
@@ -429,89 +569,30 @@ Yarisugi Sales Management SystemのAWSアーキテクチャ仕様書です。AI�
 2025年8月26日
 
 ## バージョン
-v3.5.0
+v3.6.0
 
-## AIメール機能 ✅ 新規追加
+## 主要な改善点（v3.6.0）
 
-### 概要
-IMAP接続によるメール取得・管理機能です。Gmail等のメールサーバーに安全に接続し、メールの一覧表示と詳細表示を行います。
+### AIメール機能 顧客フィルタリング ✅ 最新版
+- **顧客フィルタリング**: 顧客テーブルに登録されている顧客からのメールのみ表示
+- **メール返信機能**: SMTP送信による返信機能の追加
+- **メール取得件数**: 30件に最適化（タイムアウト回避）
+- **パフォーマンス最適化**: 処理時間の短縮と安定性向上
+- **フィルタリング情報表示**: 顧客メールのみ表示されていることをユーザーに通知
+- **セキュリティ強化**: 顧客メール以外へのアクセス拒否
+- **デバッグ機能**: 詳細なログ出力による問題解決支援
 
-### 機能特徴
-- **IMAP接続**: Gmail等のメールサーバーへの安全な接続
-- **メール取得**: 最新10件のメールを高速取得（パフォーマンス最適化）
-- **メール詳細表示**: 個別メールの内容・添付ファイル表示
-- **複数アカウント対応**: 複数のメールアカウントを同時管理
-- **セキュア接続**: SSL/TLS対応の安全なメール接続
-- **Gmail対応**: Gmailアプリパスワードによる安全な接続
+### 技術的改善
+- **顧客テーブル連携**: DynamoDBの顧客テーブルとメールフィルタリングの統合
+- **SMTP送信機能**: メール返信用のSMTP送信Lambda関数
+- **パフォーマンス最適化**: 30件表示によるタイムアウト回避
+- **環境変数設定**: Lambda関数の適切な環境変数設定
+- **IAM権限**: 顧客テーブルアクセス権限の追加
+- **Terraform同期**: インフラ設定の完全な状態管理
 
-### 技術仕様
-
-#### IMAP接続機能
-- **imaplib**: Python標準ライブラリによるIMAP接続
-- **SSL/TLS対応**: 安全な暗号化通信
-- **接続テスト**: 接続前に認証情報の検証
-- **エラーハンドリング**: 接続失敗時の適切な処理
-- **タイムアウト**: 10秒のタイムアウトでレスポンス性を確保
-
-#### メール取得機能
-- **最新10件表示**: パフォーマンス最適化のため最新10件のみ取得
-- **メール詳細**: 件名、送信者、日時、本文、添付ファイル情報
-- **HTML/プレーンテキスト対応**: 両形式のメール本文に対応
-- **文字エンコーディング**: 適切な文字エンコーディング処理
-
-### API仕様
-
-#### メール接続管理
-- **POST /email/test-connection**: メール接続テスト
-- **POST /email/save-connection**: メール接続保存
-- **GET /email/connections**: メール接続一覧取得
-- **DELETE /email/connections/{connectionId}**: メール接続削除
-
-#### メール取得
-- **GET /email/messages**: メール一覧取得（最新10件）
-- **GET /email/messages/{messageId}**: メール詳細取得
-
-#### リクエスト形式（接続テスト）
-```json
-{
-  "email": "user@gmail.com",
-  "password": "app-password",
-  "imapServer": "imap.gmail.com",
-  "imapPort": 993,
-  "useSSL": true
-}
-```
-
-#### レスポンス形式（メール一覧）
-```json
-{
-  "success": true,
-  "emails": [
-    {
-      "messageId": "message-id",
-      "subject": "メール件名",
-      "from": "送信者",
-      "date": "2025-08-26T12:00:00Z",
-      "hasAttachments": false
-    }
-  ]
-}
-```
-
-### 処理フロー
-1. **接続テスト**: ユーザーが入力した認証情報でIMAP接続をテスト
-2. **接続保存**: 接続成功時に認証情報をDynamoDBに安全に保存
-3. **メール取得**: 保存された接続情報を使用してメールを取得
-4. **メール表示**: フロントエンドでメール一覧・詳細を表示
-
-### セキュリティ
-- **アプリパスワード**: Gmail等のアプリパスワードによる安全な認証
-- **DynamoDB暗号化**: 接続情報の暗号化保存
-- **SSL/TLS**: すべての通信の暗号化
-- **タイムアウト**: 適切なタイムアウト設定
-
-### パフォーマンス最適化
-- **最新10件表示**: 全メール取得による遅延を回避
-- **非同期処理**: フロントエンドでの非同期メール取得
-- **キャッシュ**: 接続情報の効率的な管理
-- **エラーハンドリング**: 接続失敗時の適切な処理
+### ユーザビリティ
+- **営業特化**: 顧客からのメールのみを表示し、営業活動に集中
+- **返信機能**: メール詳細から直接返信可能
+- **視覚的フィードバック**: フィルタリング状態の明確な表示
+- **安定性**: タイムアウトエラーの回避
+- **効率性**: 不要なメールを除外した効率的なメール管理

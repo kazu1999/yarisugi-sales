@@ -1191,6 +1191,15 @@ resource "aws_lambda_permission" "email_fetcher" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
 }
 
+# メール送信Lambdaの権限
+resource "aws_lambda_permission" "email_sender" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.email_sender.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
 # Lambda関数の環境変数設定
 resource "aws_lambda_function" "customers_api" {
   filename         = "../lambda_functions/customers_lambda/customers_lambda.zip"
@@ -1442,6 +1451,30 @@ resource "aws_lambda_function" "email_fetcher" {
   environment {
     variables = {
       EMAIL_CONNECTIONS_TABLE = aws_dynamodb_table.email_connections.name
+      CUSTOMERS_TABLE = aws_dynamodb_table.customers.name
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# メール送信Lambda関数
+resource "aws_lambda_function" "email_sender" {
+  filename         = "../lambda_functions/email_sender/email_sender_lambda.zip"
+  function_name    = "${var.project_name}-email-sender-${var.environment}"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "email_sender.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 30
+  memory_size     = 256
+  source_code_hash = filebase64sha256("../lambda_functions/email_sender/email_sender_lambda.zip")
+
+  environment {
+    variables = {
+      EMAIL_CONNECTIONS_TABLE = aws_dynamodb_table.email_connections.name
     }
   }
 
@@ -1554,6 +1587,13 @@ resource "aws_api_gateway_resource" "email_message_item" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.email_messages.id
   path_part   = "{messageId}"
+}
+
+# メール送信API リソース
+resource "aws_api_gateway_resource" "email_send" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.email.id
+  path_part   = "send"
 }
 
 # ナレッジ管理API メソッド
@@ -2282,6 +2322,22 @@ resource "aws_api_gateway_method" "email_message_options" {
   authorization = "NONE"
 }
 
+# メール送信API メソッド
+resource "aws_api_gateway_method" "email_send_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.email_send.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "email_send_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.email_send.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
 # メール接続テストAPI インテグレーション
 resource "aws_api_gateway_integration" "email_test_connection_post" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -2420,6 +2476,29 @@ resource "aws_api_gateway_integration" "email_message_options" {
   }
 }
 
+# メール送信API インテグレーション
+resource "aws_api_gateway_integration" "email_send_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_send.id
+  http_method = aws_api_gateway_method.email_send_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.email_sender.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "email_send_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_send.id
+  http_method = aws_api_gateway_method.email_send_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
 # メール関連のメソッドレスポンス
 resource "aws_api_gateway_method_response" "email_test_connection_options" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -2490,6 +2569,19 @@ resource "aws_api_gateway_method_response" "email_message_options" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   resource_id = aws_api_gateway_resource.email_message_item.id
   http_method = aws_api_gateway_method.email_message_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_method_response" "email_send_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_send.id
+  http_method = aws_api_gateway_method.email_send_options.http_method
   status_code = "200"
 
   response_parameters = {
@@ -2570,6 +2662,19 @@ resource "aws_api_gateway_integration_response" "email_message_options" {
   resource_id = aws_api_gateway_resource.email_message_item.id
   http_method = aws_api_gateway_method.email_message_options.http_method
   status_code = aws_api_gateway_method_response.email_message_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+resource "aws_api_gateway_integration_response" "email_send_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.email_send.id
+  http_method = aws_api_gateway_method.email_send_options.http_method
+  status_code = aws_api_gateway_method_response.email_send_options.status_code
 
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
@@ -2692,6 +2797,12 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.email_message_options,
     aws_api_gateway_method_response.email_message_options,
     aws_api_gateway_integration_response.email_message_options,
+    aws_api_gateway_method.email_send_post,
+    aws_api_gateway_integration.email_send_post,
+    aws_api_gateway_method.email_send_options,
+    aws_api_gateway_integration.email_send_options,
+    aws_api_gateway_method_response.email_send_options,
+    aws_api_gateway_integration_response.email_send_options,
     aws_api_gateway_integration_response.email_test_connection_options,
     aws_api_gateway_integration_response.email_save_connection_options,
     aws_api_gateway_integration_response.email_connections_options,

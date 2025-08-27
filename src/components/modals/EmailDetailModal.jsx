@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { X, Mail, Calendar, User, FileText, Download, ArrowLeft, RefreshCw } from 'lucide-react';
+import { X, Mail, Calendar, User, FileText, Download, ArrowLeft, RefreshCw, Send } from 'lucide-react';
 import { awsApiClient } from '../../utils/awsApiClient';
+import EmailReplyModal from './EmailReplyModal';
 
 const EmailDetailModal = ({ isOpen, onClose, email, connection, onBack }) => {
   const [emailDetail, setEmailDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showReplyModal, setShowReplyModal] = useState(false);
 
   useEffect(() => {
     if (isOpen && email && connection) {
@@ -106,6 +108,13 @@ const EmailDetailModal = ({ isOpen, onClose, email, connection, onBack }) => {
             </h2>
           </div>
           <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setShowReplyModal(true)}
+              className="flex items-center px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            >
+              <Send className="w-4 h-4 mr-1" />
+              返信
+            </button>
             <button
               onClick={fetchEmailDetail}
               disabled={loading}
@@ -225,6 +234,19 @@ const EmailDetailModal = ({ isOpen, onClose, email, connection, onBack }) => {
             <p className="text-gray-500">メール詳細を読み込めませんでした。</p>
           </div>
         )}
+
+        {/* 返信モーダル */}
+        <EmailReplyModal
+          isOpen={showReplyModal}
+          onClose={() => setShowReplyModal(false)}
+          originalEmail={emailDetail}
+          connection={connection}
+          onReplySent={() => {
+            setShowReplyModal(false);
+            // 返信送信後にメール詳細を更新
+            fetchEmailDetail();
+          }}
+        />
       </div>
     </div>
   );
