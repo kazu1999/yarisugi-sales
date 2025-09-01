@@ -22,8 +22,9 @@ import KnowledgeManager from './components/knowledge/KnowledgeManager';
 import RagSearch from './components/knowledge/RagSearch';
 import CompanyProfileTab from './components/company/CompanyProfileTab';
 import EmailConnectionModal from './components/modals/EmailConnectionModal';
-import EmailListModal from './components/modals/EmailListModal';
-import EmailDetailModal from './components/modals/EmailDetailModal';
+
+import EmailList from './components/EmailList';
+import EmailDetail from './components/EmailDetail';
 // import CustomerDetail from './components/customer/CustomerDetail';
 
 const YarisugiDashboard = () => {
@@ -147,10 +148,12 @@ const YarisugiDashboard = () => {
   
   // メール機能用の状態
   const [showEmailModal, setShowEmailModal] = useState(false);
-  const [showEmailListModal, setShowEmailListModal] = useState(false);
-  const [showEmailDetailModal, setShowEmailDetailModal] = useState(false);
+
+  const [showEmailDetail, setShowEmailDetail] = useState(false);
+  const [showEmailList, setShowEmailList] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [selectedConnection, setSelectedConnection] = useState(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   
   // AIファイルアップロード用の状態
   const [aiUploadedFile, setAiUploadedFile] = useState(null);
@@ -209,13 +212,18 @@ const YarisugiDashboard = () => {
   const handleEmailSelect = (email, connection) => {
     setSelectedEmail(email);
     setSelectedConnection(connection);
-    setShowEmailListModal(false);
-    setShowEmailDetailModal(true);
+
+    setShowEmailList(false);
+    setShowEmailDetail(true);
   };
 
   const handleBackToEmailList = () => {
-    setShowEmailDetailModal(false);
-    setShowEmailListModal(true);
+    setShowEmailDetail(false);
+    setShowEmailList(true);
+  };
+
+  const handleEmailListClose = () => {
+    setShowEmailList(false);
   };
 
   // テキストファイル読み込み
@@ -865,6 +873,20 @@ const YarisugiDashboard = () => {
     setShowCustomerForm(true);
   };
 
+  // ユーザーメニューの外側をクリックした時に閉じる
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showUserMenu && !event.target.closest('.user-menu-container')) {
+        setShowUserMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showUserMenu]);
+
   return (
     <div className="h-screen w-full bg-gray-50 font-sans text-gray-800 flex flex-col">
       {/* ヘッダー */}
@@ -873,43 +895,84 @@ const YarisugiDashboard = () => {
           Yarisugi
         </div>
         <div className="flex gap-2 sm:gap-4 items-center">
-          <div className="relative cursor-pointer text-lg sm:text-xl">
-            🔔
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">3</span>
-          </div>
+
           
           {/* ユーザー情報 */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="hidden sm:block text-right">
-              <div className="text-sm font-medium text-gray-900">
-                {currentUser?.displayName || currentUser?.email?.split('@')[0] || 'ユーザー'}
-              </div>
-              <div className="text-xs text-gray-500">
-                {currentUser?.email}
-              </div>
+          <div className="relative user-menu-container">
+            <div 
+              className="flex items-center gap-2 sm:gap-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
+              onClick={() => setShowUserMenu(!showUserMenu)}
+            >
+                             <div className="hidden sm:block text-right">
+                 <div className="text-sm font-medium text-gray-900">
+                   {currentUser?.displayName || currentUser?.username?.split('@')[0] || 'ユーザー'}
+                 </div>
+                 <div className="text-xs text-gray-500">
+                   {currentUser?.email || currentUser?.username}
+                 </div>
+                 {currentUser?.emailVerified && (
+                   <div className="text-xs text-green-600 flex items-center gap-1">
+                     <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                     認証済み
+                   </div>
+                 )}
+               </div>
+               <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                 {currentUser?.displayName?.charAt(0) || currentUser?.username?.charAt(0) || 'U'}
+               </div>
             </div>
-            <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-              {currentUser?.displayName?.charAt(0) || currentUser?.email?.charAt(0) || 'U'}
-            </div>
+
+            {/* ユーザーメニュードロップダウン */}
+            {showUserMenu && (
+              <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                <div className="p-4 border-b border-gray-200">
+                  {currentUser ? (
+                    <>
+                      <div className="text-sm font-medium text-gray-900">
+                        {currentUser.displayName || currentUser.username?.split('@')[0] || 'ユーザー'}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {currentUser.email || currentUser.username || 'メールアドレスなし'}
+                      </div>
+                      <div className="text-xs text-blue-600 mt-1">
+                        ID: {currentUser.userId}
+                      </div>
+                      {currentUser.emailVerified && (
+                        <div className="text-xs text-green-600 flex items-center gap-1 mt-1">
+                          <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                          メール認証済み
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-sm text-gray-500">
+                      ユーザー情報を読み込み中...
+                    </div>
+                  )}
+                </div>
+                <div className="p-2">
+                  <button
+                    onClick={async () => {
+                      try {
+                        await logout();
+                        navigate('/login');
+                      } catch (error) {
+                        console.error('ログアウトエラー:', error);
+                      }
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    ログアウト
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           
-          <Button size="sm">CSVエクスポート</Button>
+
           
-          {/* ログアウトボタン */}
-          <button
-            onClick={async () => {
-              try {
-                await logout();
-                navigate('/login');
-              } catch (error) {
-                console.error('ログアウトエラー:', error);
-              }
-            }}
-            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-            title="ログアウト"
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
+
         </div>
       </div>
 
@@ -1047,49 +1110,7 @@ const YarisugiDashboard = () => {
                 </div>
               </div>
 
-              {/* メール自動化セクション */}
-              <div className="bg-white rounded-xl p-6 shadow-sm mb-6">
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-bold text-slate-800">📧 メール・LINE自動化</h2>
-                </div>
-                
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* 最新の受信メール */}
-                  <div className="bg-blue-50 rounded-lg p-6 border border-blue-200">
-                    <h3 className="text-blue-700 mb-4 flex items-center gap-2">
-                      <span>🔔</span>
-                      <span>最新の受信メール</span>
-                    </h3>
-                    <div className="bg-white rounded-md p-4 mb-4 cursor-pointer hover:bg-gray-50" onClick={showApprovalScreen}>
-                      <p className="font-semibold mb-2">株式会社テックソリューション</p>
-                      <p className="text-sm text-gray-600">件名: 見積もりについて問い合わせ</p>
-                      <p className="text-xs text-gray-400">受信: 10分前</p>
-                    </div>
-                    <Button size="sm">返信テンプレート選択</Button>
-                  </div>
 
-                  {/* 最新のLINEメッセージ */}
-                  <div className="bg-green-50 rounded-lg p-6 border border-green-200">
-                    <h3 className="text-green-700 mb-4 flex items-center gap-2">
-                      <span>💬</span>
-                      <span>最新のLINEメッセージ</span>
-                    </h3>
-                    <div className="space-y-3">
-                      <div className="bg-white rounded-md p-4 cursor-pointer hover:bg-gray-50">
-                        <p className="font-semibold mb-2">佐藤花子（グローバル商事）</p>
-                        <p className="text-sm text-gray-600">メッセージ: 来週の打ち合わせの件で...</p>
-                        <p className="text-xs text-gray-400">受信: 25分前</p>
-                      </div>
-                      <div className="bg-white rounded-md p-4 cursor-pointer hover:bg-gray-50">
-                        <p className="font-semibold mb-2">鈴木次郎（製造工業）</p>
-                        <p className="text-sm text-gray-600">メッセージ: 資料ありがとうございました</p>
-                        <p className="text-xs text-gray-400">受信: 1時間前</p>
-                      </div>
-                    </div>
-                    <Button size="sm">個別LINE選択</Button>
-                  </div>
-                </div>
-              </div>
 
               {/* レポートプレビュー */}
               {showReport && (
@@ -1248,40 +1269,53 @@ const YarisugiDashboard = () => {
                       メール接続
                     </Button>
                     <Button 
-                      onClick={() => setShowEmailListModal(true)}
+                      onClick={() => setShowEmailList(!showEmailList)}
                       className="flex items-center gap-2"
                     >
                       <Mail className="w-4 h-4" />
-                      メール一覧
+                      {showEmailList ? 'メール一覧を閉じる' : 'メール一覧'}
                     </Button>
                   </div>
                 </div>
                 
                 <div className="p-6">
-                  <div className="text-center py-12">
-                    <Mail className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">メール機能</h3>
-                    <p className="text-gray-600 mb-6">
-                      メールアカウントを接続して、メールの一覧表示や詳細確認ができます。
-                    </p>
-                    <div className="flex justify-center gap-4">
-                      <Button 
-                        onClick={() => setShowEmailModal(true)}
-                        className="flex items-center gap-2"
-                      >
-                        <Mail className="w-4 h-4" />
-                        メール接続設定
-                      </Button>
-                      <Button 
-                        onClick={() => setShowEmailListModal(true)}
-                        variant="outline"
-                        className="flex items-center gap-2"
-                      >
-                        <Mail className="w-4 h-4" />
-                        メール一覧表示
-                      </Button>
+                  {showEmailDetail ? (
+                    <EmailDetail 
+                      email={selectedEmail}
+                      connection={selectedConnection}
+                      onBack={handleBackToEmailList}
+                    />
+                  ) : showEmailList ? (
+                    <EmailList 
+                      onEmailSelect={handleEmailSelect}
+                      onClose={handleEmailListClose}
+                    />
+                  ) : (
+                    <div className="text-center py-12">
+                      <Mail className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">メール機能</h3>
+                      <p className="text-gray-600 mb-6">
+                        メールアカウントを接続して、メールの一覧表示や詳細確認ができます。
+                      </p>
+                      <div className="flex justify-center gap-4">
+                        <Button 
+                          onClick={() => setShowEmailModal(true)}
+                          className="flex items-center gap-2"
+                        >
+                          <Mail className="w-4 h-4" />
+                          メール接続設定
+                        </Button>
+                        <Button 
+                          onClick={() => setShowEmailList(true)}
+                          variant="outline"
+                          className="flex items-center gap-2"
+                        >
+                          <Mail className="w-4 h-4" />
+                          メール一覧表示
+                        </Button>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -3171,21 +3205,9 @@ ${selectedProcess.name}の件でご連絡させていただきました。
             onConnectionSuccess={handleEmailConnectionSuccess}
           />
 
-          {/* メール一覧モーダル */}
-          <EmailListModal
-            isOpen={showEmailListModal}
-            onClose={() => setShowEmailListModal(false)}
-            onEmailSelect={handleEmailSelect}
-          />
 
-          {/* メール詳細モーダル */}
-          <EmailDetailModal
-            isOpen={showEmailDetailModal}
-            onClose={() => setShowEmailDetailModal(false)}
-            email={selectedEmail}
-            connection={selectedConnection}
-            onBack={handleBackToEmailList}
-          />
+
+
         </div>
       </div>
     </div>

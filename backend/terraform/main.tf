@@ -1353,14 +1353,14 @@ resource "aws_lambda_function" "knowledge_manager" {
 
 # RAG検索Lambda関数
 resource "aws_lambda_function" "rag_search" {
-  filename         = "../lambda_functions/rag_search/rag_search_optimized.zip"
+  filename         = "../lambda_functions/rag_search/rag_search_lambda.zip"
   function_name    = "${var.project_name}-rag-search-${var.environment}"
   role            = aws_iam_role.ai_lambda_role.arn
   handler         = "rag_search.lambda_handler"
   runtime         = "python3.11"
   timeout         = 29
   memory_size     = 3008
-  source_code_hash = filebase64sha256("../lambda_functions/rag_search/rag_search_optimized.zip")
+  source_code_hash = filebase64sha256("../lambda_functions/rag_search/rag_search_lambda.zip")
 
   environment {
     variables = {
@@ -1448,10 +1448,10 @@ resource "aws_lambda_function" "email_manager" {
 
 # メール取得Lambda関数
 resource "aws_lambda_function" "email_fetcher" {
-  filename         = "../lambda_functions/email_fetcher/email_fetcher_optimized.zip"
+  filename         = "../lambda_functions/email_fetcher/email_fetcher_lambda.zip"
   function_name    = "yarisugi-sales-email-fetcher-dev"
   role            = aws_iam_role.lambda_role.arn
-  handler         = "email_fetcher_optimized.lambda_handler"
+  handler         = "email_fetcher.lambda_handler"
   runtime         = "python3.11"
   timeout         = 60  # タイムアウトを60秒に延長
   memory_size     = 512  # メモリを512MBに増加

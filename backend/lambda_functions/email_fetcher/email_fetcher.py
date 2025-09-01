@@ -8,6 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 import base64
 import quopri
+import time
 
 # DynamoDB設定
 dynamodb = boto3.resource('dynamodb')
@@ -150,12 +151,10 @@ def extract_email_address(email_string):
     return matches[0] if matches else ''
 
 def is_customer_email(from_addr, customer_emails):
-    """顧客からのメールかどうかを判定"""
+    """送信者が顧客テーブルに登録されているかチェック"""
     if not from_addr or not customer_emails:
-        print(f"DEBUG: is_customer_email - from_addr: {from_addr}, customer_emails: {customer_emails}")
         return False
     
-    # 送信者のメールアドレスを抽出
     sender_email = extract_email_address(from_addr)
     
     print(f"DEBUG: is_customer_email - sender_email: {sender_email}, customer_emails: {customer_emails}")
@@ -165,9 +164,11 @@ def is_customer_email(from_addr, customer_emails):
     print(f"DEBUG: is_customer_email - result: {is_customer}")
     return is_customer
 
-def fetch_email_list(connection_info, customer_emails, folder='INBOX', limit=50):
-    """メール一覧を取得（顧客からのメールのみ）"""
+def fetch_email_list_optimized(connection_info, customer_emails, folder='INBOX', limit=15, offset=0):
+    """メール一覧を取得（最適化版）"""
     try:
+        start_time = time.time()
+        
         # IMAP接続
         if connection_info['useSSL']:
             mail = imaplib.IMAP4_SSL(connection_info['imapServer'], int(connection_info['imapPort']))
@@ -177,45 +178,61 @@ def fetch_email_list(connection_info, customer_emails, folder='INBOX', limit=50)
         mail.login(connection_info['emailAddress'], connection_info['password'])
         mail.select(folder)
         
-        # メール一覧を取得
-        _, message_numbers = mail.search(None, 'ALL')
+        # 顧客メールアドレスをセットに変換（高速化）
+        customer_emails_set = set(customer_emails)
+        
+        # 顧客メールアドレスごとに検索して、メッセージIDを収集
+        all_customer_message_ids = set()
+        
+        for customer_email in customer_emails:
+            try:
+                # 特定の送信者からのメールを検索
+                search_criteria = f'FROM "{customer_email}"'
+                _, message_numbers = mail.search(None, search_criteria)
+                
+                if message_numbers[0]:
+                    message_ids = message_numbers[0].split()
+                    all_customer_message_ids.update(message_ids)
+                    
+            except Exception as e:
+                print(f"顧客 {customer_email} のメール検索中にエラー: {str(e)}")
+                continue
+        
+        # メッセージIDを数値に変換してソート
+        message_list = []
+        for msg_id in all_customer_message_ids:
+            try:
+                message_list.append(int(msg_id))
+            except ValueError:
+                continue
+        
+        # 最新順にソート
+        message_list.sort(reverse=True)
+        
+        # オフセットを適用
+        start_index = offset
+        end_index = min(len(message_list), start_index + limit)
+        message_list = message_list[start_index:end_index]
+        
         email_list = []
-        
-        # 最新のメールから取得
-        message_list = message_numbers[0].split()
-        message_list.reverse()  # 最新順
-        
         processed_count = 0
-        customer_email_count = 0
         
+        # 顧客メールのみを処理
         for num in message_list:
-            # 処理済みの顧客メール数がlimitに達したら終了
-            if customer_email_count >= limit:
-                break
-            
-            # 処理済みメール数がlimitの3倍に達したら終了（パフォーマンス考慮）
-            if processed_count >= limit * 3:
+            if len(email_list) >= limit:
                 break
             
             try:
-                _, msg_data = mail.fetch(num, '(RFC822)')
-                email_body = msg_data[0][1]
-                msg = email.message_from_bytes(email_body)
+                # ヘッダー情報のみを取得（高速化）
+                _, msg_data = mail.fetch(str(num).encode(), '(BODY.PEEK[HEADER])')
+                email_header = msg_data[0][1]
+                msg = email.message_from_bytes(email_header)
                 
                 # メール情報を抽出
                 subject = decode_email_header(msg.get('Subject', ''))
                 from_addr = decode_email_header(msg.get('From', ''))
                 to_addr = decode_email_header(msg.get('To', ''))
                 date_str = msg.get('Date', '')
-                
-                # 顧客からのメールかどうかを判定
-                print(f"DEBUG: Checking email from {from_addr} against customer list")
-                if not is_customer_email(from_addr, customer_emails):
-                    print(f"DEBUG: Skipping non-customer email from {from_addr}")
-                    processed_count += 1
-                    continue
-                
-                print(f"DEBUG: Including customer email from {from_addr}")
                 
                 # 日付をパース
                 try:
@@ -228,19 +245,23 @@ def fetch_email_list(connection_info, customer_emails, folder='INBOX', limit=50)
                 except Exception:
                     formatted_date = date_str
                 
+                # 添付ファイルの有無を確認（Content-Typeヘッダーから判定）
+                has_attachments = False
+                content_type = msg.get('Content-Type', '')
+                if 'multipart' in content_type.lower():
+                    has_attachments = True
+                
                 email_info = {
-                    'messageId': num.decode(),
+                    'messageId': str(num),
                     'subject': subject,
                     'from': from_addr,
                     'to': to_addr,
                     'date': formatted_date,
-                    'hasAttachments': msg.get_content_maintype() == 'multipart'
+                    'hasAttachments': has_attachments
                 }
                 
                 email_list.append(email_info)
-                customer_email_count += 1
                 processed_count += 1
-                print(f"DEBUG: Added customer email. Total: {customer_email_count}/{limit}")
                 
             except Exception as e:
                 print(f"メール {num} の処理中にエラー: {str(e)}")
@@ -248,15 +269,34 @@ def fetch_email_list(connection_info, customer_emails, folder='INBOX', limit=50)
                 continue
         
         mail.logout()
-        print(f"DEBUG: Final result - Total emails found: {len(email_list)}, Processed: {processed_count}")
-        return email_list
+        
+        end_time = time.time()
+        print(f"DEBUG: Email fetch completed in {end_time - start_time:.2f} seconds")
+        print(f"DEBUG: Found {len(email_list)} customer emails from {processed_count} processed emails")
+        print(f"DEBUG: Total customer emails available: {len(all_customer_message_ids)}")
+        print(f"DEBUG: Offset: {offset}, Limit: {limit}, Has more: {start_index + limit < len(all_customer_message_ids)}")
+        
+        # 次のページがあるかどうかを判定
+        has_more = (start_index + limit) < len(all_customer_message_ids)
+        
+        print(f"DEBUG: Pagination info - start_index: {start_index}, limit: {limit}, total_customer_emails: {len(all_customer_message_ids)}")
+        print(f"DEBUG: Pagination info - has_more: {has_more}, next_offset: {start_index + limit if has_more else None}")
+        
+        return {
+            'emails': email_list,
+            'has_more': has_more,
+            'next_offset': start_index + limit if has_more else None,
+            'total_processed': processed_count
+        }
         
     except Exception as e:
         raise Exception(f"メール一覧の取得に失敗しました: {str(e)}")
 
-def fetch_email_detail(connection_info, message_id, customer_emails, folder='INBOX'):
-    """メール詳細を取得"""
+def fetch_email_detail_optimized(connection_info, message_id, customer_emails, folder='INBOX'):
+    """メール詳細を取得（最適化版）"""
     try:
+        start_time = time.time()
+        
         # IMAP接続
         if connection_info['useSSL']:
             mail = imaplib.IMAP4_SSL(connection_info['imapServer'], int(connection_info['imapPort']))
@@ -266,7 +306,7 @@ def fetch_email_detail(connection_info, message_id, customer_emails, folder='INB
         mail.login(connection_info['emailAddress'], connection_info['password'])
         mail.select(folder)
         
-        # メール詳細を取得
+        # メール詳細を取得（RFC822で完全なメールを取得）
         _, msg_data = mail.fetch(message_id.encode(), '(RFC822)')
         email_body = msg_data[0][1]
         msg = email.message_from_bytes(email_body)
@@ -277,6 +317,12 @@ def fetch_email_detail(connection_info, message_id, customer_emails, folder='INB
         to_addr = decode_email_header(msg.get('To', ''))
         cc_addr = decode_email_header(msg.get('Cc', ''))
         date_str = msg.get('Date', '')
+        
+        # 顧客からのメールかどうかを確認
+        customer_emails_set = set(customer_emails)
+        if not is_customer_email(from_addr, customer_emails_set):
+            mail.logout()
+            raise Exception('このメールは顧客からのメールではありません')
         
         # 日付をパース
         try:
@@ -310,6 +356,11 @@ def fetch_email_detail(connection_info, message_id, customer_emails, folder='INB
                         'size': len(part.get_payload(decode=True)) if part.get_payload(decode=True) else 0
                     })
         
+        mail.logout()
+        
+        end_time = time.time()
+        print(f"DEBUG: Email detail fetch completed in {end_time - start_time:.2f} seconds")
+        
         email_detail = {
             'messageId': message_id,
             'subject': subject,
@@ -321,7 +372,6 @@ def fetch_email_detail(connection_info, message_id, customer_emails, folder='INB
             'attachments': attachments
         }
         
-        mail.logout()
         return email_detail
         
     except Exception as e:
@@ -369,11 +419,7 @@ def lambda_handler(event, context):
             try:
                 connection_info = get_connection_info(user_id, connection_id)
                 customer_emails = get_customer_emails(user_id)
-                email_detail = fetch_email_detail(connection_info, message_id, customer_emails, folder)
-                
-                # 顧客からのメールかどうかを確認
-                if not is_customer_email(email_detail['from'], customer_emails):
-                    return create_response(403, {'error': 'このメールは顧客からのメールではありません'})
+                email_detail = fetch_email_detail_optimized(connection_info, message_id, customer_emails, folder)
                 
                 return create_response(200, {
                     'success': True,
@@ -387,10 +433,12 @@ def lambda_handler(event, context):
             connection_id = query_params.get('connectionId')
             folder = query_params.get('folder', 'INBOX')
             limit = int(query_params.get('limit', 10))
+            offset = int(query_params.get('offset', 0))
             
             print(f"Connection ID: {connection_id}")  # デバッグ用
             print(f"Folder: {folder}")  # デバッグ用
             print(f"Limit: {limit}")  # デバッグ用
+            print(f"Offset: {offset}")  # デバッグ用
             
             if not connection_id:
                 return create_response(400, {'error': '接続IDが必要です'})
@@ -398,11 +446,14 @@ def lambda_handler(event, context):
             try:
                 connection_info = get_connection_info(user_id, connection_id)
                 customer_emails = get_customer_emails(user_id)
-                email_list = fetch_email_list(connection_info, customer_emails, folder, limit)
+                email_list_result = fetch_email_list_optimized(connection_info, customer_emails, folder, limit, offset)
                 
                 return create_response(200, {
                     'success': True,
-                    'emails': email_list,
+                    'emails': email_list_result['emails'],
+                    'has_more': email_list_result['has_more'],
+                    'next_offset': email_list_result['next_offset'],
+                    'total_processed': email_list_result['total_processed'],
                     'filtered': True,
                     'filter_description': '顧客テーブルに登録されている顧客からのメールのみを表示しています'
                 })

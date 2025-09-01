@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 
 // タブコンポーネントのインポート
 import OverviewTab from './tabs/OverviewTab';
-import SalesActionTab from './tabs/SalesActionTab';
+
 import EmailTab from './tabs/EmailTab';
 import LineTab from './tabs/LineTab';
 import InvoiceTab from './tabs/InvoiceTab';
@@ -14,8 +14,6 @@ import ApprovalTab from './tabs/ApprovalTab';
 // モーダルコンポーネントのインポート
 import EmailComposerModal from '../modals/EmailComposerModal';
 import LineComposerModal from '../modals/LineComposerModal';
-import ProcessSettingsModal from '../modals/ProcessSettingsModal';
-import TemplateSaveModal from '../modals/TemplateSaveModal';
 
 const CustomerDetail = ({
   showCustomerDetail,
@@ -24,8 +22,6 @@ const CustomerDetail = ({
   // カスタムフックから取得した状態と関数
   activeTab,
   setActiveTab,
-  showProcessSettings,
-  setShowProcessSettings,
   showEmailComposer,
   setShowEmailComposer,
   showLineComposer,
@@ -39,25 +35,10 @@ const CustomerDetail = ({
   emailHistory,
   lineHistory,
   approvalItems,
-  salesProcess,
-  processTemplates,
-  showTemplateSaveModal,
-  setShowTemplateSaveModal,
-  newTemplateName,
-  setNewTemplateName,
-  // 関数
-  calculateProgress,
-  updateProcessStep,
-  addProcessStep,
-  removeProcessStep,
-  saveAsTemplate,
-  applyProcessTemplate,
-  deleteTemplate,
   // 定数
   industryOptions,
   snsStatusOptions,
-  customerStatuses,
-  processTypes
+  customerStatuses
 }) => {
   if (!showCustomerDetail || !selectedCustomer) return null;
 
@@ -65,7 +46,6 @@ const CustomerDetail = ({
     { id: '概要', label: '概要', icon: '📊' },
     { id: 'ファイル管理', label: 'ファイル管理', icon: '📁' },
     { id: '商談記録', label: '商談記録', icon: '📝' },
-    { id: '営業アクション', label: '営業アクション', icon: '⚡' },
     { id: 'メール管理', label: 'メール管理', icon: '📧' },
     { id: 'LINE管理', label: 'LINE管理', icon: '💬' },
     { id: '請求書管理', label: '請求書管理', icon: '💰' },
@@ -87,18 +67,7 @@ const CustomerDetail = ({
             selectedCustomer={selectedCustomer}
           />
         );
-      case '営業アクション':
-        return (
-          <SalesActionTab
-            salesProcess={salesProcess}
-            processTypes={processTypes}
-            calculateProgress={calculateProgress}
-            setShowProcessSettings={setShowProcessSettings}
-            setSelectedProcess={setSelectedProcess}
-            setShowEmailComposer={setShowEmailComposer}
-            setShowLineComposer={setShowLineComposer}
-          />
-        );
+
       case 'メール管理':
         return <EmailTab emailHistory={emailHistory} />;
       case 'LINE管理':
@@ -171,29 +140,6 @@ const CustomerDetail = ({
         setShowLineComposer={setShowLineComposer}
         selectedProcess={selectedProcess}
         customerForm={customerForm}
-      />
-      
-      <ProcessSettingsModal
-        showProcessSettings={showProcessSettings}
-        setShowProcessSettings={setShowProcessSettings}
-        processTemplates={processTemplates}
-        salesProcess={salesProcess}
-        processTypes={processTypes}
-        addProcessStep={addProcessStep}
-        removeProcessStep={removeProcessStep}
-        updateProcessStep={updateProcessStep}
-        applyProcessTemplate={applyProcessTemplate}
-        deleteTemplate={deleteTemplate}
-        setShowTemplateSaveModal={setShowTemplateSaveModal}
-      />
-      
-      <TemplateSaveModal
-        showTemplateSaveModal={showTemplateSaveModal}
-        setShowTemplateSaveModal={setShowTemplateSaveModal}
-        newTemplateName={newTemplateName}
-        setNewTemplateName={setNewTemplateName}
-        salesProcess={salesProcess}
-        saveAsTemplate={saveAsTemplate}
       />
     </div>
   );

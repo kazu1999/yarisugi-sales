@@ -208,8 +208,6 @@ const CustomerDetailPage = () => {
           // カスタムフックから取得した状態と関数
           activeTab={activeTab}
           setActiveTab={setActiveTab}
-          showProcessSettings={showProcessSettings}
-          setShowProcessSettings={setShowProcessSettings}
           showEmailComposer={showEmailComposer}
           setShowEmailComposer={setShowEmailComposer}
           showLineComposer={showLineComposer}
@@ -223,25 +221,10 @@ const CustomerDetailPage = () => {
           emailHistory={emailHistory}
           lineHistory={lineHistory}
           approvalItems={approvalItems}
-          salesProcess={salesProcess}
-          processTemplates={processTemplates}
-          showTemplateSaveModal={showTemplateSaveModal}
-          setShowTemplateSaveModal={setShowTemplateSaveModal}
-          newTemplateName={newTemplateName}
-          setNewTemplateName={setNewTemplateName}
-          // 関数
-          calculateProgress={calculateProgress}
-          updateProcessStep={updateProcessStep}
-          addProcessStep={addProcessStep}
-          removeProcessStep={removeProcessStep}
-          saveAsTemplate={saveAsTemplate}
-          applyProcessTemplate={applyProcessTemplate}
-          deleteTemplate={deleteTemplate}
           // 定数
           industryOptions={industryOptions}
           snsStatusOptions={snsStatusOptions}
           customerStatuses={customerStatuses}
-          processTypes={processTypes}
         />
       </div>
     </div>
