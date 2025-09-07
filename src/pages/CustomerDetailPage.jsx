@@ -1,13 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import CustomerDetail from '../components/customer/CustomerDetail';
 import { useCustomerManagement } from '../hooks/useCustomerManagement';
 import { awsApiClient } from '../utils/awsApiClient';
+import AuthContext from '../contexts/AuthContext';
 
 const CustomerDetailPage = () => {
   const { customerId } = useParams();
   const navigate = useNavigate();
+  const { currentUser } = useContext(AuthContext);
   
   // カスタムフックから顧客管理の状態と関数を取得
   const {
@@ -204,7 +206,7 @@ const CustomerDetailPage = () => {
         <CustomerDetail
           showCustomerDetail={true}
           setShowCustomerDetail={() => navigate('/')}
-          selectedCustomer={selectedCustomer}
+          selectedCustomer={{ ...selectedCustomer, currentUser }}
           // カスタムフックから取得した状態と関数
           activeTab={activeTab}
           setActiveTab={setActiveTab}
