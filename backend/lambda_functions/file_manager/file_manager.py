@@ -10,6 +10,8 @@ import io
 import requests
 import openai
 from decimal import Decimal
+import subprocess
+import tempfile
 
 # AWS クライアントの初期化
 dynamodb = boto3.resource('dynamodb')
@@ -45,6 +47,60 @@ def get_openai_client():
         print(f"Error getting OpenAI API key: {e}")
         return None
 
+# 音声ファイル圧縮関数
+def compress_audio(audio_content: bytes, file_extension: str, target_size_mb: int = 20) -> bytes:
+    """音声ファイルを圧縮してWhisper APIの制限内に収める"""
+    try:
+        print(f"Starting audio compression for {file_extension} file, target size: {target_size_mb}MB")
+        
+        # 一時ファイルを作成
+        with tempfile.NamedTemporaryFile(suffix=f'.{file_extension}', delete=False) as input_file:
+            input_file.write(audio_content)
+            input_file_path = input_file.name
+        
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as output_file:
+            output_file_path = output_file.name
+        
+        # ffmpegで圧縮（Whisper推奨設定）
+        cmd = [
+            '/var/task/ffmpeg', '-i', input_file_path,
+            '-ar', '16000',          # サンプリングレート16kHz
+            '-ac', '1',              # モノラル
+            '-acodec', 'pcm_s16le',  # 16bit PCM
+            '-y',                    # 上書き確認なし
+            output_file_path
+        ]
+        
+        print(f"Running ffmpeg command: {' '.join(cmd)}")
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print(f"ffmpeg output: {result.stdout}")
+        
+        # 圧縮後のファイルを読み込み
+        with open(output_file_path, 'rb') as f:
+            compressed_content = f.read()
+        
+        # 一時ファイルを削除
+        os.unlink(input_file_path)
+        os.unlink(output_file_path)
+        
+        original_size_mb = len(audio_content) / (1024 * 1024)
+        compressed_size_mb = len(compressed_content) / (1024 * 1024)
+        compression_ratio = (1 - compressed_size_mb / original_size_mb) * 100
+        
+        print(f"Audio compression completed: {original_size_mb:.2f}MB -> {compressed_size_mb:.2f}MB ({compression_ratio:.1f}% reduction)")
+        
+        return compressed_content
+        
+    except subprocess.CalledProcessError as e:
+        print(f"ffmpeg error: {e}")
+        print(f"ffmpeg stderr: {e.stderr}")
+        return audio_content  # 圧縮失敗時は元のファイルを返す
+    except Exception as e:
+        print(f"Audio compression error: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        return audio_content  # 圧縮失敗時は元のファイルを返す
+
 def extract_text_from_pdf(pdf_content: bytes) -> str:
     """PDFファイルからテキストを抽出"""
     try:
@@ -61,25 +117,278 @@ def extract_text_from_pdf(pdf_content: bytes) -> str:
 def transcribe_audio(audio_content: bytes, file_extension: str) -> str:
     """音声ファイルをテキストに変換（OpenAI Whisper使用）"""
     try:
+        print(f"Starting audio transcription for extension: {file_extension}")
+        print(f"Audio content size: {len(audio_content)} bytes")
+        
         openai_client = get_openai_client()
         if not openai_client:
+            print("OpenAI client not available")
             return "音声変換に失敗しました"
         
         # 音声ファイルを一時的に保存
         temp_file_path = f"/tmp/audio.{file_extension}"
+        print(f"Saving audio to temp file: {temp_file_path}")
         with open(temp_file_path, "wb") as f:
             f.write(audio_content)
         
         # OpenAI Whisperで音声変換
+        print("Calling OpenAI Whisper API...")
         with open(temp_file_path, "rb") as audio_file:
             transcript = openai_client.Audio.transcribe("whisper-1", audio_file)
+        
+        print(f"Transcription result: {transcript.text[:100] if transcript.text else 'None'}...")
         
         # 一時ファイルを削除
         os.remove(temp_file_path)
         return transcript.text
     except Exception as e:
         print(f"Error transcribing audio: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return "音声変換に失敗しました"
+
+# 質問機能の関数
+def handle_file_question(event: Dict[str, Any]) -> Dict[str, Any]:
+    """ファイルに対する質問を処理"""
+    try:
+        # リクエストボディの解析
+        body = json.loads(event.get('body', '{}'))
+        file_id = body.get('fileId')
+        customer_id = body.get('customerId')
+        question = body.get('question')
+        user_id = body.get('userId')
+        
+        if not all([file_id, customer_id, question, user_id]):
+            return {
+                'statusCode': 400,
+                'headers': {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+                },
+                'body': json.dumps({'error': 'Missing required parameters'})
+            }
+        
+        # ファイル情報を取得
+        table = dynamodb.Table(CUSTOMER_FILES_TABLE)
+        response = table.query(
+            KeyConditionExpression='PK = :pk AND SK = :sk',
+            ExpressionAttributeValues={
+                ':pk': f'CUSTOMER#{customer_id}',
+                ':sk': f'FILE#{file_id}'
+            }
+        )
+        
+        if not response['Items']:
+            return {
+                'statusCode': 404,
+                'headers': {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+                },
+                'body': json.dumps({'error': 'File not found'})
+            }
+        
+        file_item = response['Items'][0]
+        file_text = file_item.get('fileText', '')
+        file_name = file_item.get('fileName', '')
+        file_type = file_item.get('fileType', '')
+        
+        if not file_text:
+            return {
+                'statusCode': 400,
+                'headers': {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+                },
+                'body': json.dumps({'error': 'File content not available for questions'})
+            }
+        
+        # GPTで質問に回答
+        answer = generate_question_answer(file_text, question, file_name, file_type)
+        
+        # 質問・回答を履歴として保存
+        question_id = str(uuid.uuid4())
+        save_question_history(question_id, file_id, customer_id, question, answer, user_id)
+        
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+            },
+            'body': json.dumps({
+                'success': True,
+                'questionId': question_id,
+                'answer': answer
+            })
+        }
+        
+    except Exception as e:
+        print(f"Error handling file question: {e}")
+        return {
+            'statusCode': 500,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+            },
+            'body': json.dumps({'error': 'Internal server error'})
+        }
+
+def generate_question_answer(file_text: str, question: str, file_name: str, file_type: str) -> str:
+    """ファイル内容に基づいて質問に回答を生成"""
+    try:
+        openai_client = get_openai_client()
+        if not openai_client:
+            return "OpenAI APIキーが設定されていません"
+        
+        # ファイル内容を適切な長さに制限（GPTのトークン制限を考慮）
+        max_chars = 8000  # 安全な範囲で制限
+        if len(file_text) > max_chars:
+            file_text = file_text[:max_chars] + "..."
+        
+        # プロンプトを作成
+        if file_type.lower() == 'pdf':
+            prompt = f"""以下のPDFファイル「{file_name}」の内容に基づいて、質問に回答してください。
+
+ファイル内容:
+{file_text}
+
+質問: {question}
+
+回答の際は以下の点に注意してください:
+1. ファイル内容に基づいた正確な回答を提供してください
+2. 関連する箇所があれば引用してください（「〜の部分で」「〜によると」など）
+3. ファイル内容に答えがない場合は、その旨を明確に述べてください
+4. 回答は日本語で、分かりやすく簡潔に記述してください
+"""
+        else:  # 音声ファイル
+            prompt = f"""以下の音声ファイル「{file_name}」の転写内容に基づいて、質問に回答してください。
+
+音声内容:
+{file_text}
+
+質問: {question}
+
+回答の際は以下の点に注意してください:
+1. 音声内容に基づいた正確な回答を提供してください
+2. 関連する箇所があれば引用してください（「〜の部分で」「〜によると」など）
+3. 音声内容に答えがない場合は、その旨を明確に述べてください
+4. 回答は日本語で、分かりやすく簡潔に記述してください
+"""
+        
+        response = openai_client.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "あなたは文書や音声の内容を分析して質問に答えるアシスタントです。"},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1000,
+            temperature=0.3
+        )
+        
+        return response.choices[0].message.content.strip()
+        
+    except Exception as e:
+        print(f"Error generating question answer: {e}")
+        return "回答の生成中にエラーが発生しました"
+
+def save_question_history(question_id: str, file_id: str, customer_id: str, 
+                         question: str, answer: str, user_id: str) -> None:
+    """質問・回答の履歴をDynamoDBに保存"""
+    try:
+        table = dynamodb.Table(CUSTOMER_FILES_TABLE)
+        
+        item = {
+            'PK': f'CUSTOMER#{customer_id}',
+            'SK': f'QUESTION#{question_id}',
+            'questionId': question_id,
+            'fileId': file_id,
+            'customerId': customer_id,
+            'question': question,
+            'answer': answer,
+            'userId': user_id,
+            'createdAt': datetime.utcnow().isoformat(),
+            'status': 'active'
+        }
+        
+        table.put_item(Item=item)
+        print(f"Question history saved: {question_id}")
+        
+    except Exception as e:
+        print(f"Error saving question history: {e}")
+
+def handle_file_questions(event: Dict[str, Any]) -> Dict[str, Any]:
+    """ファイルの質問履歴を取得"""
+    try:
+        # クエリパラメータの解析
+        query_params = event.get('queryStringParameters', {}) or {}
+        file_id = query_params.get('fileId')
+        customer_id = query_params.get('customerId')
+        
+        if not all([file_id, customer_id]):
+            return {
+                'statusCode': 400,
+                'headers': {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+                },
+                'body': json.dumps({'error': 'Missing required parameters'})
+            }
+        
+        # 質問履歴を取得
+        table = dynamodb.Table(CUSTOMER_FILES_TABLE)
+        response = table.query(
+            KeyConditionExpression='PK = :pk AND begins_with(SK, :sk_prefix)',
+            FilterExpression='fileId = :file_id',
+            ExpressionAttributeValues={
+                ':pk': f'CUSTOMER#{customer_id}',
+                ':sk_prefix': 'QUESTION#',
+                ':file_id': file_id
+            }
+        )
+        
+        questions = []
+        for item in response['Items']:
+            questions.append({
+                'questionId': item.get('questionId'),
+                'question': item.get('question'),
+                'answer': item.get('answer'),
+                'createdAt': item.get('createdAt')
+            })
+        
+        # 作成日時でソート（新しい順）
+        questions.sort(key=lambda x: x['createdAt'], reverse=True)
+        
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+            },
+            'body': json.dumps({
+                'success': True,
+                'questions': questions
+            })
+        }
+        
+    except Exception as e:
+        print(f"Error getting file questions: {e}")
+        return {
+            'statusCode': 500,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+            },
+            'body': json.dumps({'error': 'Internal server error'})
+        }
 
 def generate_summary(text: str, file_type: str) -> str:
     """テキストの要約を生成"""
@@ -140,7 +449,7 @@ def save_file_to_s3(file_content: bytes, file_name: str, customer_id: str) -> st
         raise e
 
 def save_file_metadata(file_id: str, customer_id: str, file_name: str, file_type: str, 
-                      file_size: int, s3_key: str, summary: str, user_id: str) -> Dict[str, Any]:
+                      file_size: int, s3_key: str, summary: str, user_id: str, file_text: str = "") -> Dict[str, Any]:
     """ファイルのメタデータをDynamoDBに保存"""
     try:
         table = dynamodb.Table(CUSTOMER_FILES_TABLE)
@@ -155,6 +464,7 @@ def save_file_metadata(file_id: str, customer_id: str, file_name: str, file_type
             'fileSize': file_size,
             's3Key': s3_key,
             'summary': summary,
+            'fileText': file_text,  # ファイル内容のテキスト（質問機能用）
             'userId': user_id,
             'uploadedAt': datetime.utcnow().isoformat(),
             'status': 'active'
@@ -177,12 +487,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         if http_method == 'POST' and '/files/upload' in path:
             return handle_file_upload(event)
+        elif http_method == 'POST' and '/files/question' in path:
+            return handle_file_question(event)
+        elif http_method == 'GET' and '/files/questions' in path:
+            return handle_file_questions(event)
         elif http_method == 'GET' and '/files/' in path and path != '/files':
             return handle_file_detail(event)
         elif http_method == 'GET' and '/files' in path:
             return handle_file_list(event)
         elif http_method == 'DELETE' and '/files/' in path:
             return handle_file_delete(event)
+        elif http_method == 'POST' and '/files/generate-text' in path:
+            return handle_generate_file_text(event)
         else:
             return {
                 'statusCode': 400,
@@ -204,6 +520,107 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
             },
             'body': json.dumps({'error': 'Internal server error'})
+        }
+
+def handle_generate_file_text(event: Dict[str, Any]) -> Dict[str, Any]:
+    """既存ファイルのfileTextを後から生成する"""
+    try:
+        # リクエストボディの解析
+        body = json.loads(event.get('body', '{}'))
+        file_id = body.get('fileId')
+        customer_id = body.get('customerId')
+        
+        if not file_id or not customer_id:
+            return {
+                'statusCode': 400,
+                'headers': {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+                },
+                'body': json.dumps({'error': 'fileId and customerId are required'})
+            }
+        
+        # ファイル情報を取得
+        table = dynamodb.Table(CUSTOMER_FILES_TABLE)
+        response = table.query(
+            KeyConditionExpression='PK = :pk AND SK = :sk',
+            ExpressionAttributeValues={
+                ':pk': f'CUSTOMER#{customer_id}',
+                ':sk': f'FILE#{file_id}'
+            }
+        )
+        
+        if not response.get('Items'):
+            return {
+                'statusCode': 404,
+                'headers': {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+                },
+                'body': json.dumps({'error': 'File not found'})
+            }
+        
+        file_item = response['Items'][0]
+        s3_key = file_item.get('s3Key')
+        file_type = file_item.get('fileType', '').lower()
+        file_name = file_item.get('fileName', '')
+        
+        # S3からファイルを取得
+        s3_response = s3.get_object(Bucket=S3_BUCKET, Key=s3_key)
+        file_content = s3_response['Body'].read()
+        
+        # ファイルタイプに応じてテキストを抽出
+        file_text = ""
+        if file_type == 'pdf':
+            file_text = extract_text_from_pdf(file_content)
+        elif file_type in ['mp3', 'wav', 'm4a', 'aac', 'audio', 'webm']:
+            # 音声ファイルの場合は拡張子を取得
+            if file_type == 'audio':
+                # ファイル名から拡張子を抽出
+                file_extension = file_name.split('.')[-1].lower() if '.' in file_name else 'wav'
+            else:
+                file_extension = file_type
+            
+            file_text = transcribe_audio(file_content, file_extension)
+        
+        # DynamoDBのfileTextフィールドを更新
+        table.update_item(
+            Key={
+                'PK': f'CUSTOMER#{customer_id}',
+                'SK': f'FILE#{file_id}'
+            },
+            UpdateExpression='SET fileText = :file_text',
+            ExpressionAttributeValues={
+                ':file_text': file_text
+            }
+        )
+        
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+            },
+            'body': json.dumps({
+                'success': True,
+                'message': 'ファイルテキストが正常に生成されました',
+                'fileText': file_text[:500] + '...' if len(file_text) > 500 else file_text
+            })
+        }
+        
+    except Exception as e:
+        print(f"Error in handle_generate_file_text: {e}")
+        return {
+            'statusCode': 500,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+            },
+            'body': json.dumps({'error': f'Failed to generate file text: {str(e)}'})
         }
 
 def handle_file_upload(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -231,9 +648,46 @@ def handle_file_upload(event: Dict[str, Any]) -> Dict[str, Any]:
         # Base64デコード
         file_content = base64.b64decode(file_content_base64)
         file_size = len(file_content)
+        file_size_mb = file_size / (1024 * 1024)
         
-        # ファイルサイズチェック（10MB制限）
-        if file_size > 10 * 1024 * 1024:
+        print(f"Original file size: {file_size_mb:.2f}MB")
+        
+        # 音声ファイルの圧縮処理
+        if file_type.lower() in ['mp3', 'wav', 'm4a', 'aac', 'audio', 'webm']:
+            # 25MBを超える音声ファイルは自動圧縮
+            if file_size_mb > 25:
+                print(f"Audio file size ({file_size_mb:.2f}MB) exceeds 25MB limit, compressing...")
+                
+                # file_typeが'audio'の場合は、ファイル名から拡張子を取得
+                if file_type.lower() in ['audio']:
+                    file_extension = file_name.split('.')[-1].lower() if '.' in file_name else 'wav'
+                else:
+                    file_extension = file_type.lower()
+                
+                # 音声圧縮実行
+                compressed_content = compress_audio(file_content, file_extension, target_size_mb=20)
+                
+                # 圧縮後のサイズをチェック
+                compressed_size_mb = len(compressed_content) / (1024 * 1024)
+                if compressed_size_mb <= 25:
+                    file_content = compressed_content
+                    file_size = len(file_content)
+                    print(f"Audio compression successful: {file_size_mb:.2f}MB -> {compressed_size_mb:.2f}MB")
+                else:
+                    print(f"Audio compression failed to reduce size below 25MB: {compressed_size_mb:.2f}MB")
+                    return {
+                        'statusCode': 400,
+                        'headers': {
+                            'Access-Control-Allow-Origin': '*',
+                            'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                            'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+                        },
+                        'body': json.dumps({'error': f'Audio file too large even after compression: {compressed_size_mb:.2f}MB'})
+                    }
+        
+        # 最終的なファイルサイズチェック（50MB制限）
+        final_file_size_mb = len(file_content) / (1024 * 1024)
+        if final_file_size_mb > 50:
             return {
                 'statusCode': 400,
                 'headers': {
@@ -241,7 +695,7 @@ def handle_file_upload(event: Dict[str, Any]) -> Dict[str, Any]:
                     'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
                     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
                 },
-                'body': json.dumps({'error': 'File size exceeds 10MB limit'})
+                'body': json.dumps({'error': f'File size exceeds 50MB limit: {final_file_size_mb:.2f}MB'})
             }
         
         # ファイルをS3に保存
@@ -249,19 +703,47 @@ def handle_file_upload(event: Dict[str, Any]) -> Dict[str, Any]:
         
         # ファイル内容の処理と要約生成
         summary = ""
+        print(f"Processing file type: {file_type}")
+        
         if file_type.lower() == 'pdf':
             text = extract_text_from_pdf(file_content)
+            print(f"PDF text extracted: {len(text) if text else 0} characters")
             if text:
                 summary = generate_summary(text, "PDF")
-        elif file_type.lower() in ['mp3', 'wav', 'm4a', 'aac']:
-            text = transcribe_audio(file_content, file_type.lower())
+                print(f"PDF summary generated: {len(summary)} characters")
+        elif file_type.lower() in ['mp3', 'wav', 'm4a', 'aac', 'audio', 'webm']:
+            print(f"Starting audio transcription for {file_type}")
+            # file_typeが'audio'の場合は、ファイル名から拡張子を取得
+            if file_type.lower() in ['audio']:
+                file_extension = file_name.split('.')[-1].lower() if '.' in file_name else 'wav'
+            else:
+                file_extension = file_type.lower()
+            
+            # 圧縮されたファイルの場合は'wav'を使用
+            if file_size_mb != final_file_size_mb:
+                print(f"Using compressed audio file (wav format) for transcription")
+                file_extension = 'wav'
+            
+            print(f"Using file extension: {file_extension}")
+            text = transcribe_audio(file_content, file_extension)
+            print(f"Audio transcription result: {text[:100] if text else 'None'}...")
             if text and "失敗" not in text:
                 summary = generate_summary(text, "音声")
+                print(f"Audio summary generated: {len(summary)} characters")
+            else:
+                print("Audio transcription failed or returned empty text")
+        
+        # ファイル内容をテキストとして保存（質問機能用）
+        file_text = ""
+        if file_type.lower() == 'pdf':
+            file_text = text if text else ""
+        elif file_type.lower() in ['mp3', 'wav', 'm4a', 'aac', 'audio', 'webm']:
+            file_text = text if text else ""
         
         # メタデータをDynamoDBに保存
         file_metadata = save_file_metadata(
             file_id, customer_id, file_name, file_type, 
-            file_size, s3_key, summary, user_id
+            file_size, s3_key, summary, user_id, file_text
         )
         
         return {
@@ -309,13 +791,15 @@ def handle_file_list(event: Dict[str, Any]) -> Dict[str, Any]:
             'body': json.dumps({'error': 'customerId is required'})
         }
         
-        # DynamoDBからファイル一覧を取得
+        # DynamoDBからファイル一覧を取得（ファイルレコードのみ）
         table = dynamodb.Table(CUSTOMER_FILES_TABLE)
         response = table.query(
             IndexName='CustomerIdIndex',
             KeyConditionExpression='customerId = :customerId',
+            FilterExpression='begins_with(SK, :file_prefix)',
             ExpressionAttributeValues={
-                ':customerId': customer_id
+                ':customerId': customer_id,
+                ':file_prefix': 'FILE#'
             }
         )
         
@@ -482,8 +966,13 @@ def handle_file_delete(event: Dict[str, Any]) -> Dict[str, Any]:
         file_item = response['Items'][0]
         s3_key = file_item.get('s3Key')
         
-        # S3からファイルを削除
-        s3.delete_object(Bucket=S3_BUCKET, Key=s3_key)
+        # S3からファイルを削除（s3Keyが存在する場合のみ）
+        if s3_key:
+            try:
+                s3.delete_object(Bucket=S3_BUCKET, Key=s3_key)
+            except Exception as s3_error:
+                print(f"Warning: Failed to delete S3 object {s3_key}: {s3_error}")
+                # S3の削除に失敗してもDynamoDBの削除は続行
         
         # DynamoDBからファイル情報を削除
         table.delete_item(
@@ -492,6 +981,30 @@ def handle_file_delete(event: Dict[str, Any]) -> Dict[str, Any]:
                 'SK': file_item.get('SK')
             }
         )
+        
+        # 関連する質問レコードも削除
+        customer_id = file_item.get('customerId')
+        if customer_id:
+            # 該当ファイルの質問レコードを検索
+            questions_response = table.query(
+                KeyConditionExpression='PK = :pk AND begins_with(SK, :question_prefix)',
+                FilterExpression='fileId = :fileId',
+                ExpressionAttributeValues={
+                    ':pk': f'CUSTOMER#{customer_id}',
+                    ':question_prefix': 'QUESTION#',
+                    ':fileId': file_id
+                }
+            )
+            
+            # 質問レコードを削除
+            for question_item in questions_response.get('Items', []):
+                table.delete_item(
+                    Key={
+                        'PK': question_item.get('PK'),
+                        'SK': question_item.get('SK')
+                    }
+                )
+                print(f"Deleted question: {question_item.get('questionId')}")
         
         return {
             'statusCode': 200,
