@@ -38,3 +38,48 @@ terraform.tfvars
 
 # AWS credentials
 aws-config.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Lambda function packages
+backend/lambda_functions/*/package/
+backend/lambda_functions/*/boto3/
+backend/lambda_functions/*/botocore/
+backend/lambda_functions/*/certifi/
+backend/lambda_functions/*/charset_normalizer/
+backend/lambda_functions/*/dateutil/
+backend/lambda_functions/*/idna/
+backend/lambda_functions/*/jmespath/
+backend/lambda_functions/*/PyPDF2/
+backend/lambda_functions/*/requests/
+backend/lambda_functions/*/s3transfer/
+backend/lambda_functions/*/six.py
+backend/lambda_functions/*/urllib3/
+backend/lambda_functions/*/typing_extensions.py
+backend/lambda_functions/*/*.dist-info/
+backend/lambda_functions/*/bin/
+backend/lambda_functions/*/build/
+
+# Lambda zip files
+*.zip
