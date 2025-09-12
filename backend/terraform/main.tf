@@ -449,6 +449,56 @@ resource "aws_dynamodb_table" "customer_files" {
   }
 }
 
+# Feature Requests Table
+resource "aws_dynamodb_table" "feature_requests" {
+  name           = "${var.project_name}-feature-requests-${var.environment}"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "PK"
+  range_key      = "SK"
+
+  attribute {
+    name = "PK"
+    type = "S"
+  }
+
+  attribute {
+    name = "SK"
+    type = "S"
+  }
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  attribute {
+    name = "status"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name     = "UserIdIndex"
+    hash_key = "userId"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name     = "StatusIndex"
+    hash_key = "status"
+    projection_type = "ALL"
+  }
+
+  ttl {
+    attribute_name = "ttl"
+    enabled        = true
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
 # Cognito User Pool
 resource "aws_cognito_user_pool" "main" {
   name = "${var.project_name}-user-pool-${var.environment}"
@@ -541,7 +591,9 @@ resource "aws_iam_role_policy" "lambda_policy" {
           aws_dynamodb_table.company_profiles.arn,
           aws_dynamodb_table.proposals.arn,
           aws_dynamodb_table.email_connections.arn,
-          aws_dynamodb_table.customer_files.arn
+          aws_dynamodb_table.customer_files.arn,
+          aws_dynamodb_table.feature_requests.arn,
+          "${aws_dynamodb_table.feature_requests.arn}/index/*"
         ]
       },
       {
@@ -1277,6 +1329,15 @@ resource "aws_lambda_permission" "file_manager" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
 }
 
+# 機能追加要望Lambdaの権限
+resource "aws_lambda_permission" "feature_request" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.feature_request.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
 # Lambda関数の環境変数設定
 resource "aws_lambda_function" "customers_api" {
   filename         = "../lambda_functions/customers_lambda/customers_lambda.zip"
@@ -1624,6 +1685,29 @@ resource "aws_lambda_function" "file_manager" {
   }
 }
 
+resource "aws_lambda_function" "feature_request" {
+  filename         = "../lambda_functions/feature_request/feature_request_lambda.zip"
+  function_name    = "${var.project_name}-feature-request-${var.environment}"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "feature_request.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 30
+  memory_size     = 256
+  source_code_hash = filebase64sha256("../lambda_functions/feature_request/feature_request_lambda.zip")
+
+  environment {
+    variables = {
+      FEATURE_REQUESTS_TABLE = aws_dynamodb_table.feature_requests.name
+      ADMIN_USERS = "admin-user-id-1,admin-user-id-2"  # 管理者ユーザーIDを設定
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
 # ナレッジ管理API リソース
 resource "aws_api_gateway_resource" "knowledge" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -1685,6 +1769,25 @@ resource "aws_api_gateway_resource" "file_item" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.files.id
   path_part   = "{fileId}"
+}
+
+# ファイル質問機能API リソース
+resource "aws_api_gateway_resource" "files_question" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.files.id
+  path_part   = "question"
+}
+
+resource "aws_api_gateway_resource" "files_questions" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.files.id
+  path_part   = "questions"
+}
+
+resource "aws_api_gateway_resource" "files_generate_text" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.files.id
+  path_part   = "generate-text"
 }
 
 # 提案内容管理API リソース
@@ -1762,6 +1865,19 @@ resource "aws_api_gateway_resource" "email_ai_reply" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_resource.email.id
   path_part   = "ai-reply"
+}
+
+# Feature Requests API Resources
+resource "aws_api_gateway_resource" "feature_requests" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "feature-requests"
+}
+
+resource "aws_api_gateway_resource" "feature_request_item" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.feature_requests.id
+  path_part   = "{requestId}"
 }
 
 # ナレッジ管理API メソッド
@@ -1891,6 +2007,53 @@ resource "aws_api_gateway_method" "file_item_delete" {
   http_method   = "DELETE"
   authorization = "COGNITO_USER_POOLS"
   authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# ファイル質問機能のAPIメソッド
+resource "aws_api_gateway_method" "files_question_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.files_question.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "files_question_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.files_question.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "files_questions_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.files_questions.id
+  http_method   = "GET"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "files_questions_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.files_questions.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# ファイルテキスト生成機能のAPIメソッド
+resource "aws_api_gateway_method" "files_generate_text_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.files_generate_text.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "files_generate_text_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.files_generate_text.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
 }
 
 resource "aws_api_gateway_method" "file_item_options" {
@@ -2576,6 +2739,45 @@ resource "aws_api_gateway_method" "email_ai_reply_options" {
   authorization = "NONE"
 }
 
+# Feature Requests API Methods
+resource "aws_api_gateway_method" "feature_requests_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.feature_requests.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "feature_requests_get" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.feature_requests.id
+  http_method   = "GET"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "feature_requests_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.feature_requests.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_method" "feature_request_item_put" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.feature_request_item.id
+  http_method   = "PUT"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "feature_request_item_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.feature_request_item.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
 # メール接続テストAPI インテグレーション
 resource "aws_api_gateway_integration" "email_test_connection_post" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -2779,6 +2981,77 @@ resource "aws_api_gateway_integration" "file_item_delete" {
   uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.file_manager.arn}/invocations"
 }
 
+# ファイル質問機能の統合
+resource "aws_api_gateway_integration" "files_question_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_question.id
+  http_method = aws_api_gateway_method.files_question_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.file_manager.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "files_question_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_question.id
+  http_method = aws_api_gateway_method.files_question_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = jsonencode({
+      statusCode = 200
+    })
+  }
+}
+
+resource "aws_api_gateway_integration" "files_questions_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_questions.id
+  http_method = aws_api_gateway_method.files_questions_get.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.file_manager.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "files_questions_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_questions.id
+  http_method = aws_api_gateway_method.files_questions_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = jsonencode({
+      statusCode = 200
+    })
+  }
+}
+
+# ファイルテキスト生成機能の統合
+resource "aws_api_gateway_integration" "files_generate_text_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_generate_text.id
+  http_method = aws_api_gateway_method.files_generate_text_post.http_method
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.file_manager.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "files_generate_text_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_generate_text.id
+  http_method = aws_api_gateway_method.files_generate_text_options.http_method
+  type        = "MOCK"
+  request_templates = {
+    "application/json" = jsonencode({
+      statusCode = 200
+    })
+  }
+}
+
 resource "aws_api_gateway_integration" "file_item_options" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   resource_id = aws_api_gateway_resource.file_item.id
@@ -2834,6 +3107,113 @@ resource "aws_api_gateway_integration" "email_ai_reply_options" {
 
   request_templates = {
     "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# Feature Requests API Integrations
+resource "aws_api_gateway_integration" "feature_requests_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.feature_requests.id
+  http_method = aws_api_gateway_method.feature_requests_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.feature_request.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "feature_requests_get" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.feature_requests.id
+  http_method = aws_api_gateway_method.feature_requests_get.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.feature_request.arn}/invocations"
+}
+
+resource "aws_api_gateway_method_response" "feature_requests_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.feature_requests.id
+  http_method = aws_api_gateway_method.feature_requests_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration" "feature_requests_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.feature_requests.id
+  http_method = aws_api_gateway_method.feature_requests_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_integration_response" "feature_requests_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.feature_requests.id
+  http_method = aws_api_gateway_method.feature_requests_options.http_method
+  status_code = aws_api_gateway_method_response.feature_requests_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+resource "aws_api_gateway_integration" "feature_request_item_put" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.feature_request_item.id
+  http_method = aws_api_gateway_method.feature_request_item_put.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.feature_request.arn}/invocations"
+}
+
+resource "aws_api_gateway_method_response" "feature_request_item_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.feature_request_item.id
+  http_method = aws_api_gateway_method.feature_request_item_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration" "feature_request_item_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.feature_request_item.id
+  http_method = aws_api_gateway_method.feature_request_item_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_integration_response" "feature_request_item_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.feature_request_item.id
+  http_method = aws_api_gateway_method.feature_request_item_options.http_method
+  status_code = aws_api_gateway_method_response.feature_request_item_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
 }
 
@@ -2947,6 +3327,47 @@ resource "aws_api_gateway_method_response" "file_item_options" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   resource_id = aws_api_gateway_resource.file_item.id
   http_method = aws_api_gateway_method.file_item_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# ファイル質問機能のメソッドレスポンス
+resource "aws_api_gateway_method_response" "files_question_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_question.id
+  http_method = aws_api_gateway_method.files_question_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_method_response" "files_questions_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_questions.id
+  http_method = aws_api_gateway_method.files_questions_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# ファイルテキスト生成機能のメソッドレスポンス
+resource "aws_api_gateway_method_response" "files_generate_text_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_generate_text.id
+  http_method = aws_api_gateway_method.files_generate_text_options.http_method
   status_code = "200"
 
   response_parameters = {
@@ -3127,6 +3548,47 @@ resource "aws_api_gateway_integration_response" "file_item_options" {
   }
 }
 
+# ファイル質問機能の統合レスポンス
+resource "aws_api_gateway_integration_response" "files_question_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_question.id
+  http_method = aws_api_gateway_method.files_question_options.http_method
+  status_code = aws_api_gateway_method_response.files_question_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+resource "aws_api_gateway_integration_response" "files_questions_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_questions.id
+  http_method = aws_api_gateway_method.files_questions_options.http_method
+  status_code = aws_api_gateway_method_response.files_questions_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# ファイルテキスト生成機能の統合レスポンス
+resource "aws_api_gateway_integration_response" "files_generate_text_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_generate_text.id
+  http_method = aws_api_gateway_method.files_generate_text_options.http_method
+  status_code = aws_api_gateway_method_response.files_generate_text_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
 # API Gateway Deployment (Updated with file management endpoints)
 resource "aws_api_gateway_deployment" "main" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -3154,6 +3616,26 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.file_item_options,
     aws_api_gateway_method_response.file_item_options,
     aws_api_gateway_integration_response.file_item_options,
+    # ファイル質問機能のリソース
+    aws_api_gateway_method.files_question_post,
+    aws_api_gateway_integration.files_question_post,
+    aws_api_gateway_method.files_question_options,
+    aws_api_gateway_integration.files_question_options,
+    aws_api_gateway_method_response.files_question_options,
+    aws_api_gateway_integration_response.files_question_options,
+    aws_api_gateway_method.files_questions_get,
+    aws_api_gateway_integration.files_questions_get,
+    aws_api_gateway_method.files_questions_options,
+    aws_api_gateway_integration.files_questions_options,
+    aws_api_gateway_method_response.files_questions_options,
+    aws_api_gateway_integration_response.files_questions_options,
+    # ファイルテキスト生成機能のリソース
+    aws_api_gateway_method.files_generate_text_post,
+    aws_api_gateway_integration.files_generate_text_post,
+    aws_api_gateway_method.files_generate_text_options,
+    aws_api_gateway_integration.files_generate_text_options,
+    aws_api_gateway_method_response.files_generate_text_options,
+    aws_api_gateway_integration_response.files_generate_text_options,
     # ファイル管理Lambda関数（強制的な依存関係）
     aws_lambda_function.file_manager,
     # ファイル管理用DynamoDBテーブル（強制的な依存関係）
@@ -3283,7 +3765,22 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration_response.email_save_connection_options,
     aws_api_gateway_integration_response.email_connections_options,
     aws_api_gateway_integration_response.email_connection_options,
-    aws_api_gateway_integration_response.email_messages_options
+    aws_api_gateway_integration_response.email_messages_options,
+    # Feature Requests API Resources
+    aws_api_gateway_method.feature_requests_post,
+    aws_api_gateway_integration.feature_requests_post,
+    aws_api_gateway_method.feature_requests_get,
+    aws_api_gateway_integration.feature_requests_get,
+    aws_api_gateway_method.feature_requests_options,
+    aws_api_gateway_method_response.feature_requests_options,
+    aws_api_gateway_integration.feature_requests_options,
+    aws_api_gateway_integration_response.feature_requests_options,
+    aws_api_gateway_method.feature_request_item_put,
+    aws_api_gateway_integration.feature_request_item_put,
+    aws_api_gateway_method.feature_request_item_options,
+    aws_api_gateway_method_response.feature_request_item_options,
+    aws_api_gateway_integration.feature_request_item_options,
+    aws_api_gateway_integration_response.feature_request_item_options
         ]
 
   lifecycle {
@@ -3315,5 +3812,6 @@ output "dynamodb_tables" {
     proposals       = aws_dynamodb_table.proposals.name
     email_connections = aws_dynamodb_table.email_connections.name
     customer_files  = aws_dynamodb_table.customer_files.name
+    feature_requests = aws_dynamodb_table.feature_requests.name
   }
 } 

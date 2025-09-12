@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
+import { awsApiClient } from './utils/awsApiClient';
+import { getCurrentUser } from './utils/cognitoAuth';
 import { 
   Search, Plus, Upload, Send, Calendar, Phone, Mail, ChevronRight, 
   FileText, AlertCircle, Check, X, MessageSquare, Clock, User, 
@@ -537,6 +539,27 @@ const YarisugiDashboard = () => {
   });
   const [showReport, setShowReport] = useState(false);
 
+  // 機能追加要望フォーム関連の状態
+  const [featureRequestForm, setFeatureRequestForm] = useState({
+    description: '',
+    priority: '',
+    attachment: null
+  });
+  const [submittingFeatureRequest, setSubmittingFeatureRequest] = useState(false);
+
+  // 管理者画面関連の状態
+  const [adminClickCount, setAdminClickCount] = useState(0);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [featureRequests, setFeatureRequests] = useState([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [adminFilters, setAdminFilters] = useState({
+    priority: 'all',
+    status: 'all',
+    search: ''
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
+
   const handleInputChange = (field, value) => {
     setFormData(prev => ({
       ...prev,
@@ -566,6 +589,165 @@ const YarisugiDashboard = () => {
       setDatabaseText('');
       setShowAddDatabase(false);
     }
+  };
+
+  // 機能追加要望フォームの送信処理
+  const handleFeatureRequestSubmit = async (e) => {
+    e.preventDefault();
+    
+    // バリデーション
+    if (!featureRequestForm.description.trim()) {
+      alert('機能の詳細を入力してください');
+      return;
+    }
+    
+    if (!featureRequestForm.priority) {
+      alert('緊急度を選択してください');
+      return;
+    }
+
+    setSubmittingFeatureRequest(true);
+
+    try {
+      const response = await awsApiClient.request('/feature-requests', 'POST', {
+        description: featureRequestForm.description,
+        priority: featureRequestForm.priority,
+        attachmentUrl: '' // 添付ファイル機能は後で実装
+      });
+
+      if (response.success) {
+        alert('ご要望を送信しました！ご意見ありがとうございます 🎉');
+        // フォームをリセット
+        setFeatureRequestForm({
+          description: '',
+          priority: '',
+          attachment: null
+        });
+      } else {
+        alert(response.error || '要望の送信に失敗しました');
+      }
+    } catch (error) {
+      console.error('要望送信エラー:', error);
+      alert('要望の送信に失敗しました。もう一度お試しください。');
+    } finally {
+      setSubmittingFeatureRequest(false);
+    }
+  };
+
+  // 機能追加要望フォームの入力処理
+  const handleFeatureRequestInputChange = (field, value) => {
+    setFeatureRequestForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  // 管理者画面関連の関数
+  const handleAdminTabClick = () => {
+    const newCount = adminClickCount + 1;
+    setAdminClickCount(newCount);
+
+    if (newCount >= 5) {
+      setShowAdminPanel(true);
+      setAdminClickCount(0);
+      fetchFeatureRequests();
+    } else if (newCount === 1) {
+      // 3秒後にカウントをリセット
+      setTimeout(() => {
+        setAdminClickCount(0);
+      }, 3000);
+    }
+  };
+
+  const fetchFeatureRequests = async () => {
+    setLoadingRequests(true);
+    try {
+      // 現在のユーザー情報をログ出力
+      const currentUser = await getCurrentUser();
+      console.log('🔍 現在のユーザー情報:', currentUser);
+      console.log('🔍 ユーザーID:', currentUser?.userId || currentUser?.username || currentUser?.sub);
+      
+      const response = await awsApiClient.request('/feature-requests', 'GET');
+      console.log('🔍 APIレスポンス詳細:', response);
+      if (response.success) {
+        // APIレスポンスでは 'requests' として返されている
+        setFeatureRequests(response.requests || []);
+        console.log('🔍 設定された要望データ:', response.requests || []);
+      } else {
+        alert('要望の取得に失敗しました: ' + (response.error || '不明なエラー'));
+      }
+    } catch (error) {
+      console.error('要望取得エラー:', error);
+      alert('要望の取得に失敗しました。もう一度お試しください。');
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
+  const updateRequestStatus = async (requestId, newStatus) => {
+    try {
+      const response = await awsApiClient.request(`/feature-requests/${requestId}`, 'PUT', {
+        status: newStatus
+      });
+      if (response.success) {
+        alert('ステータスを更新しました');
+        fetchFeatureRequests(); // 一覧を再取得
+      } else {
+        alert('ステータスの更新に失敗しました: ' + (response.error || '不明なエラー'));
+      }
+    } catch (error) {
+      console.error('ステータス更新エラー:', error);
+      alert('ステータスの更新に失敗しました。もう一度お試しください。');
+    }
+  };
+
+  const handleAdminFilterChange = (field, value) => {
+    setAdminFilters(prev => ({
+      ...prev,
+      [field]: value
+    }));
+    setCurrentPage(1); // フィルタ変更時は1ページ目に戻る
+  };
+
+  const getFilteredRequests = () => {
+    console.log('🔍 getFilteredRequests - featureRequests:', featureRequests);
+    let filtered = featureRequests;
+
+    // 緊急度フィルタ
+    if (adminFilters.priority !== 'all') {
+      filtered = filtered.filter(req => req.priority === adminFilters.priority);
+    }
+
+    // ステータスフィルタ
+    if (adminFilters.status !== 'all') {
+      filtered = filtered.filter(req => req.status === adminFilters.status);
+    }
+
+    // 検索フィルタ
+    if (adminFilters.search) {
+      const searchLower = adminFilters.search.toLowerCase();
+      filtered = filtered.filter(req => 
+        req.description.toLowerCase().includes(searchLower) ||
+        req.userEmail.toLowerCase().includes(searchLower)
+      );
+    }
+
+    return filtered;
+  };
+
+  const getPaginatedRequests = () => {
+    const filtered = getFilteredRequests();
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const paginated = filtered.slice(startIndex, endIndex);
+    console.log('🔍 getPaginatedRequests - filtered:', filtered);
+    console.log('🔍 getPaginatedRequests - paginated:', paginated);
+    return paginated;
+  };
+
+  const getTotalPages = () => {
+    const filtered = getFilteredRequests();
+    return Math.ceil(filtered.length / itemsPerPage);
   };
 
   // FAQBuilder関連の関数
@@ -903,25 +1085,25 @@ const YarisugiDashboard = () => {
               className="flex items-center gap-2 sm:gap-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
               onClick={() => setShowUserMenu(!showUserMenu)}
             >
-                             <div className="hidden sm:block text-right">
-                 <div className="text-sm font-medium text-gray-900">
+            <div className="hidden sm:block text-right">
+              <div className="text-sm font-medium text-gray-900">
                    {currentUser?.displayName || currentUser?.username?.split('@')[0] || 'ユーザー'}
-                 </div>
-                 <div className="text-xs text-gray-500">
+              </div>
+              <div className="text-xs text-gray-500">
                    {currentUser?.email || currentUser?.username}
-                 </div>
+              </div>
                  {currentUser?.emailVerified && (
                    <div className="text-xs text-green-600 flex items-center gap-1">
                      <span className="w-2 h-2 bg-green-500 rounded-full"></span>
                      認証済み
                    </div>
                  )}
-               </div>
-               <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                 {currentUser?.displayName?.charAt(0) || currentUser?.username?.charAt(0) || 'U'}
-               </div>
             </div>
-
+            <div className="w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                 {currentUser?.displayName?.charAt(0) || currentUser?.username?.charAt(0) || 'U'}
+            </div>
+          </div>
+          
             {/* ユーザーメニュードロップダウン */}
             {showUserMenu && (
               <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
@@ -951,20 +1133,20 @@ const YarisugiDashboard = () => {
                   )}
                 </div>
                 <div className="p-2">
-                  <button
-                    onClick={async () => {
-                      try {
-                        await logout();
-                        navigate('/login');
-                      } catch (error) {
-                        console.error('ログアウトエラー:', error);
-                      }
-                    }}
+          <button
+            onClick={async () => {
+              try {
+                await logout();
+                navigate('/login');
+              } catch (error) {
+                console.error('ログアウトエラー:', error);
+              }
+            }}
                     className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
-                  >
+          >
                     <LogOut className="w-4 h-4" />
                     ログアウト
-                  </button>
+          </button>
                 </div>
               </div>
             )}
@@ -994,7 +1176,10 @@ const YarisugiDashboard = () => {
                   ? 'bg-yellow-500 text-slate-900'
                   : 'bg-yellow-200 text-yellow-900 hover:bg-yellow-300'
               }`}
-              onClick={() => setActivePage('featureRequest')}
+              onClick={() => {
+                handleAdminTabClick();
+                setActivePage('featureRequest');
+              }}
             >
               💬 機能追加要望フォーム
             </button>
@@ -1275,8 +1460,8 @@ const YarisugiDashboard = () => {
                       <Mail className="w-4 h-4" />
                       {showEmailList ? 'メール一覧を閉じる' : 'メール一覧'}
                     </Button>
-                  </div>
                 </div>
+                    </div>
                 
                 <div className="p-6">
                   {showEmailDetail ? (
@@ -1313,28 +1498,28 @@ const YarisugiDashboard = () => {
                           <Mail className="w-4 h-4" />
                           メール一覧表示
                         </Button>
-                      </div>
-                    </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            </div>
+                  )}
+                        </div>
+                        </div>
+                        </div>
           )}
 
           {activePage === 'faq' && (
-            <div>
+                    <div>
               <div className="mb-6">
                 <h1 className="text-2xl font-bold text-gray-900">FAQ管理システム</h1>
                 <p className="text-gray-600 mt-2">よくある質問の管理とAI自動生成</p>
-              </div>
-
+                  </div>
+                  
               {/* デバッグ情報 */}
               <div className="mb-4 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
                 <p>Debug: faqs.length = {faqs.length}</p>
                 <p>Debug: filteredFaqs.length = {filteredFaqs.length}</p>
                 <p>Debug: loading = {faqsLoading.toString()}</p>
                 <p>Debug: error = {faqsError || 'なし'}</p>
-                  <button 
+                    <button 
                   onClick={() => {
                     console.log('🔄 手動でFAQデータ再取得');
                     fetchFaqs();
@@ -1342,14 +1527,14 @@ const YarisugiDashboard = () => {
                   className="mt-2 px-2 py-1 bg-blue-500 text-white rounded text-xs"
                 >
                   FAQデータ再取得
-                  </button>
+                    </button>
                 </div>
-
+                
               {/* エラーメッセージ */}
               {faqsError && (
                 <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
                   <p className="text-red-800">{faqsError}</p>
-            </div>
+                      </div>
           )}
 
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
@@ -1367,7 +1552,7 @@ const YarisugiDashboard = () => {
                           onChange={(e) => setFaqSearchQuery(e.target.value)}
                           className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                         />
-                      </div>
+                    </div>
                       <Button 
                         size="sm" 
                         variant={showFaqFilters ? "primary" : "secondary"}
@@ -2174,19 +2359,191 @@ const YarisugiDashboard = () => {
 
           {activePage === 'featureRequest' && (
             <div className="max-w-2xl mx-auto">
+              {/* 管理者画面 */}
+              {console.log('🔍 showAdminPanel:', showAdminPanel)}
+              {showAdminPanel && (
+                <div className="mb-6">
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h1 className="text-2xl font-bold text-red-700">🔒 管理者画面</h1>
+                      <button
+                        onClick={() => setShowAdminPanel(false)}
+                        className="text-red-600 hover:text-red-800 text-sm"
+                      >
+                        ✕ 閉じる
+                      </button>
+                    </div>
+                    
+                    {/* フィルタ・検索 */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">緊急度</label>
+                        <select
+                          value={adminFilters.priority}
+                          onChange={(e) => handleAdminFilterChange('priority', e.target.value)}
+                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                        >
+                          <option value="all">すべて</option>
+                          <option value="high">すぐ欲しい</option>
+                          <option value="medium">そのうち欲しい</option>
+                          <option value="idea">アイデアとして共有</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">ステータス</label>
+                        <select
+                          value={adminFilters.status}
+                          onChange={(e) => handleAdminFilterChange('status', e.target.value)}
+                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                        >
+                          <option value="all">すべて</option>
+                          <option value="submitted">送信済み</option>
+                          <option value="in_progress">対応中</option>
+                          <option value="completed">完了</option>
+                          <option value="rejected">却下</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">検索</label>
+                        <input
+                          type="text"
+                          value={adminFilters.search}
+                          onChange={(e) => handleAdminFilterChange('search', e.target.value)}
+                          placeholder="要望内容・メールアドレス"
+                          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    {/* 要望一覧 */}
+                    <div className="bg-white rounded-lg border">
+                      {loadingRequests ? (
+                        <div className="p-8 text-center">
+                          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+                          <p className="mt-2 text-gray-600">要望を読み込み中...</p>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="p-4 border-b bg-gray-50">
+                            <div className="flex justify-between items-center">
+                              <h3 className="font-semibold text-gray-800">
+                                要望一覧 ({getFilteredRequests().length}件)
+                              </h3>
+                              <button
+                                onClick={fetchFeatureRequests}
+                                className="text-sm text-red-600 hover:text-red-800"
+                              >
+                                🔄 更新
+                              </button>
+                            </div>
+                          </div>
+                          
+                          <div className="max-h-96 overflow-y-auto">
+                            {getPaginatedRequests().length === 0 ? (
+                              <div className="p-8 text-center text-gray-500">
+                                要望が見つかりません
+                              </div>
+                            ) : (
+                              getPaginatedRequests().map((request) => (
+                                <div key={request.requestId} className="p-4 border-b last:border-b-0">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className={`px-2 py-1 text-xs rounded-full ${
+                                          request.priority === 'high' ? 'bg-red-100 text-red-800' :
+                                          request.priority === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                                          'bg-blue-100 text-blue-800'
+                                        }`}>
+                                          {request.priority === 'high' ? '🚨 すぐ欲しい' :
+                                           request.priority === 'medium' ? '⭐ そのうち欲しい' :
+                                           '💡 アイデア'}
+                                        </span>
+                                        <span className={`px-2 py-1 text-xs rounded-full ${
+                                          request.status === 'submitted' ? 'bg-gray-100 text-gray-800' :
+                                          request.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                                          request.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                          'bg-red-100 text-red-800'
+                                        }`}>
+                                          {request.status === 'submitted' ? '📝 送信済み' :
+                                           request.status === 'in_progress' ? '🔄 対応中' :
+                                           request.status === 'completed' ? '✅ 完了' :
+                                           '❌ 却下'}
+                                        </span>
+                                      </div>
+                                      <p className="text-sm text-gray-600 mb-2">{request.description}</p>
+                                      <div className="text-xs text-gray-500">
+                                        <span>👤 {request.userEmail}</span>
+                                        <span className="ml-4">📅 {new Date(request.createdAt).toLocaleDateString('ja-JP')}</span>
+                                      </div>
+                                    </div>
+                                    <div className="ml-4">
+                                      <select
+                                        value={request.status}
+                                        onChange={(e) => updateRequestStatus(request.requestId, e.target.value)}
+                                        className="text-xs border border-gray-300 rounded px-2 py-1"
+                                      >
+                                        <option value="submitted">送信済み</option>
+                                        <option value="in_progress">対応中</option>
+                                        <option value="completed">完了</option>
+                                        <option value="rejected">却下</option>
+                                      </select>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+
+                          {/* ページネーション */}
+                          {getTotalPages() > 1 && (
+                            <div className="p-4 border-t bg-gray-50">
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm text-gray-600">
+                                  ページ {currentPage} / {getTotalPages()}
+                                </span>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                                    disabled={currentPage === 1}
+                                    className="px-3 py-1 text-sm border border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    前へ
+                                  </button>
+                                  <button
+                                    onClick={() => setCurrentPage(Math.min(getTotalPages(), currentPage + 1))}
+                                    disabled={currentPage === getTotalPages()}
+                                    className="px-3 py-1 text-sm border border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    次へ
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 通常の要望フォーム */}
               <div className="bg-white rounded-xl shadow-sm p-6">
                 <h1 className="text-2xl font-bold mb-2">💬 ご要望フォーム</h1>
                 <p className="text-gray-700 mb-6">
                   「こんな機能があったらいいな〜」を気軽に書いてください！<br />
                   思いつきでもOK、あなたのアイデアがサービスを育てます 🚀
                 </p>
-                <form className="space-y-6">
+                <form onSubmit={handleFeatureRequestSubmit} className="space-y-6">
                   {/* テキストエリア */}
                   <div>
                     <label className="block font-medium mb-1">📝 どんな機能が欲しいですか？</label>
                     <textarea
+                      value={featureRequestForm.description}
+                      onChange={(e) => handleFeatureRequestInputChange('description', e.target.value)}
                       className="w-full border border-gray-300 rounded-lg p-3 h-40 resize-none focus:outline-none focus:ring-2 focus:ring-yellow-500"
                       placeholder="例：FAQをチャット形式で表示したい、PDFから自動でナレッジ化したい など"
+                      required
                     />
                   </div>
                   {/* 緊急度 */}
@@ -2194,13 +2551,34 @@ const YarisugiDashboard = () => {
                     <label className="block font-medium mb-1">⭐ 緊急度</label>
                     <div className="space-y-1">
                       <label className="block">
-                        <input type="radio" name="priority" value="high" className="mr-2" /> すぐ欲しい！
+                        <input 
+                          type="radio" 
+                          name="priority" 
+                          value="high" 
+                          checked={featureRequestForm.priority === 'high'}
+                          onChange={(e) => handleFeatureRequestInputChange('priority', e.target.value)}
+                          className="mr-2" 
+                        /> すぐ欲しい！
                       </label>
                       <label className="block">
-                        <input type="radio" name="priority" value="medium" className="mr-2" /> そのうち欲しい
+                        <input 
+                          type="radio" 
+                          name="priority" 
+                          value="medium" 
+                          checked={featureRequestForm.priority === 'medium'}
+                          onChange={(e) => handleFeatureRequestInputChange('priority', e.target.value)}
+                          className="mr-2" 
+                        /> そのうち欲しい
                       </label>
                       <label className="block">
-                        <input type="radio" name="priority" value="idea" className="mr-2" /> アイデアとして共有
+                        <input 
+                          type="radio" 
+                          name="priority" 
+                          value="idea" 
+                          checked={featureRequestForm.priority === 'idea'}
+                          onChange={(e) => handleFeatureRequestInputChange('priority', e.target.value)}
+                          className="mr-2" 
+                        /> アイデアとして共有
                       </label>
                     </div>
                   </div>
@@ -2209,6 +2587,7 @@ const YarisugiDashboard = () => {
                     <label className="block font-medium mb-1">📎 添付ファイル（任意）</label>
                     <input 
                       type="file" 
+                      onChange={(e) => handleFeatureRequestInputChange('attachment', e.target.files[0])}
                       className="w-full border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-yellow-500" 
                     />
                   </div>
@@ -2216,9 +2595,10 @@ const YarisugiDashboard = () => {
                   <div>
                     <button
                       type="submit"
-                      className="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold px-6 py-2 rounded shadow transition-colors"
+                      disabled={submittingFeatureRequest}
+                      className="bg-yellow-500 hover:bg-yellow-600 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-semibold px-6 py-2 rounded shadow transition-colors"
                     >
-                      ご要望を送信する
+                      {submittingFeatureRequest ? '送信中...' : 'ご要望を送信する'}
                     </button>
                   </div>
                 </form>
