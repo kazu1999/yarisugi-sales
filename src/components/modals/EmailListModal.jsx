@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Mail, RefreshCw, Download, Eye, Calendar, User, FileText, Zap, Clock } from 'lucide-react';
+import { X, Mail, RefreshCw, Download, Eye, Calendar, User, FileText, Zap, Clock, ChevronDown } from 'lucide-react';
 import { awsApiClient } from '../../utils/awsApiClient';
 import useEmailConnection from '../../hooks/useEmailConnection';
 
@@ -11,7 +11,21 @@ const EmailListModal = ({ isOpen, onClose, onEmailSelect }) => {
   const [filterInfo, setFilterInfo] = useState(null);
   const [performanceInfo, setPerformanceInfo] = useState(null);
   const [lastFetchTime, setLastFetchTime] = useState(null);
+  const [customerFilter, setCustomerFilter] = useState('all'); // 'all', 'customers', 'non-customers'
+  const [showCustomerFilter, setShowCustomerFilter] = useState(false);
   const { connections, fetchConnections } = useEmailConnection();
+
+  // フィルタリングされたメール一覧
+  const filteredEmails = emails.filter(email => {
+    switch (customerFilter) {
+      case 'customers':
+        return email.isCustomer === true;
+      case 'non-customers':
+        return email.isCustomer === false;
+      default:
+        return true; // 'all'
+    }
+  });
 
   useEffect(() => {
     if (isOpen) {
@@ -177,15 +191,6 @@ const EmailListModal = ({ isOpen, onClose, onEmailSelect }) => {
           </div>
         </div>
 
-        {/* フィルター情報 */}
-        {filterInfo && (
-          <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-            <div className="flex items-center">
-              <FileText className="w-4 h-4 text-green-600 mr-2" />
-              <span className="text-sm text-green-800">{filterInfo.description}</span>
-            </div>
-          </div>
-        )}
 
         {/* エラー表示 */}
         {error && (

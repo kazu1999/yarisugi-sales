@@ -3,19 +3,44 @@ import { Mail, RefreshCw, Download, Eye, Calendar, User, FileText, Zap, Clock, X
 import { awsApiClient } from '../utils/awsApiClient';
 import useEmailConnection from '../hooks/useEmailConnection';
 
-const EmailList = ({ onEmailSelect, onClose }) => {
-  const [selectedConnection, setSelectedConnection] = useState(null);
-  const [emails, setEmails] = useState([]);
-  const [loading, setLoading] = useState(false);
+const EmailList = ({ 
+  onEmailSelect, 
+  onClose, 
+  selectedConnection: propSelectedConnection,
+  cachedEmails = [],
+  loading = false,
+  error = '',
+  hasMore = false,
+  nextOffset = null,
+  totalLoadedEmails = 0,
+  onRefresh,
+  onFetchEmails
+}) => {
+  const [selectedConnection, setSelectedConnection] = useState(propSelectedConnection);
+  const [emails, setEmails] = useState(cachedEmails);
+  const [internalLoading, setInternalLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState('');
   const [filterInfo, setFilterInfo] = useState(null);
   const [performanceInfo, setPerformanceInfo] = useState(null);
   const [lastFetchTime, setLastFetchTime] = useState(null);
-  const [hasMore, setHasMore] = useState(false);
-  const [nextOffset, setNextOffset] = useState(null);
-  const [totalLoadedEmails, setTotalLoadedEmails] = useState(0);
+  const [customerFilter, setCustomerFilter] = useState('all'); // 'all', 'customers', 'non-customers'
+  const [showCustomerFilter, setShowCustomerFilter] = useState(false);
   const { connections, fetchConnections } = useEmailConnection();
+
+  // 親コンポーネントのloadingと内部のloadingを組み合わせる
+  const isLoading = loading || internalLoading;
+
+  // フィルタリングされたメール一覧
+  const filteredEmails = emails.filter(email => {
+    switch (customerFilter) {
+      case 'customers':
+        return email.isCustomer === true;
+      case 'non-customers':
+        return email.isCustomer === false;
+      default:
+        return true; // 'all'
+    }
+  });
 
   useEffect(() => {
     fetchConnections();
@@ -28,12 +53,10 @@ const EmailList = ({ onEmailSelect, onClose }) => {
   const handleConnectionSelect = useCallback(async (connection) => {
     console.log('Selected connection:', connection);
     setSelectedConnection(connection);
-    setLoading(true);
-    setError('');
     setPerformanceInfo(null);
-    setHasMore(false);
-    setNextOffset(null);
-    setTotalLoadedEmails(0);
+    
+    // ローディング状態を開始
+    setInternalLoading(true);
 
     const startTime = performance.now();
 
@@ -62,9 +85,6 @@ const EmailList = ({ onEmailSelect, onClose }) => {
         console.log('DEBUG: emails count:', initialEmails.length);
         
         setEmails(initialEmails);
-        setTotalLoadedEmails(initialEmails.length);
-        setHasMore(response.has_more || false);
-        setNextOffset(response.next_offset || null);
         setFilterInfo({
           filtered: response.filtered || false,
           description: response.filter_description || ''
@@ -78,22 +98,33 @@ const EmailList = ({ onEmailSelect, onClose }) => {
         });
         
         setLastFetchTime(new Date());
-      } else {
-        setError(response.error || 'メール一覧の取得に失敗しました。');
       }
     } catch (err) {
-      setError('メール一覧の取得中にエラーが発生しました。');
       console.error('Fetch emails error:', err);
     } finally {
-      setLoading(false);
+      // ローディング状態を終了
+      setInternalLoading(false);
     }
   }, []);
+
+  // キャッシュされたデータが変更された場合、内部状態を更新
+  useEffect(() => {
+    setEmails(cachedEmails);
+  }, [cachedEmails]);
+
+  // 外部から渡されたselectedConnectionが変更された場合、内部状態を更新してメール一覧を取得
+  useEffect(() => {
+    if (propSelectedConnection) {
+      setSelectedConnection(propSelectedConnection);
+      // メール一覧を自動取得
+      handleConnectionSelect(propSelectedConnection);
+    }
+  }, [propSelectedConnection]);
 
   const handleLoadMore = useCallback(async () => {
     if (!selectedConnection || !hasMore || loadingMore) return;
 
     setLoadingMore(true);
-    setError('');
 
     try {
       const params = {
@@ -117,14 +148,8 @@ const EmailList = ({ onEmailSelect, onClose }) => {
         console.log('DEBUG: New emails count:', newEmails.length);
         
         setEmails(prevEmails => [...prevEmails, ...newEmails]);
-        setTotalLoadedEmails(prevTotal => prevTotal + newEmails.length);
-        setHasMore(response.has_more || false);
-        setNextOffset(response.next_offset || null);
-      } else {
-        setError(response.error || '追加メールの取得に失敗しました。');
       }
     } catch (err) {
-      setError('追加メールの取得中にエラーが発生しました。');
       console.error('Load more emails error:', err);
     } finally {
       setLoadingMore(false);
@@ -132,10 +157,12 @@ const EmailList = ({ onEmailSelect, onClose }) => {
   }, [selectedConnection, hasMore, loadingMore, nextOffset]);
 
   const handleRefresh = useCallback(() => {
-    if (selectedConnection) {
+    if (onRefresh) {
+      onRefresh();
+    } else if (selectedConnection) {
       handleConnectionSelect(selectedConnection);
     }
-  }, [selectedConnection, handleConnectionSelect]);
+  }, [selectedConnection, handleConnectionSelect, onRefresh]);
 
   const handleEmailClick = useCallback((email) => {
     if (onEmailSelect) {
@@ -217,29 +244,87 @@ const EmailList = ({ onEmailSelect, onClose }) => {
             <button
               key={connection.connectionId}
               onClick={() => handleConnectionSelect(connection)}
-              disabled={loading}
+              disabled={isLoading}
               className={`p-3 border rounded-lg text-left transition-all ${
                 selectedConnection?.connectionId === connection.connectionId
                   ? 'border-blue-500 bg-blue-50'
                   : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
-              } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <div className="font-medium text-gray-900">{connection.emailAddress}</div>
               <div className="text-sm text-gray-500">
                 {connection.isActive ? 'アクティブ' : '非アクティブ'}
               </div>
+              {isLoading && selectedConnection?.connectionId === connection.connectionId && (
+                <div className="flex items-center mt-2 text-blue-600">
+                  <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                  <span className="text-sm">メール取得中...</span>
+                </div>
+              )}
             </button>
           ))}
         </div>
       </div>
 
-      {/* フィルター情報 */}
-      {filterInfo && (
-        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-          <div className="flex items-center">
-            <FileText className="w-4 h-4 text-green-600 mr-2" />
-            <span className="text-sm text-green-800">{filterInfo.description}</span>
+
+      {/* 顧客フィルター */}
+      {selectedConnection && (
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <User className="w-4 h-4 text-blue-600 mr-2" />
+              <span className="text-sm font-medium text-blue-800">顧客フィルター</span>
+            </div>
+            <button
+              onClick={() => setShowCustomerFilter(!showCustomerFilter)}
+              className="flex items-center text-blue-600 hover:text-blue-800 transition-colors"
+            >
+              <ChevronDown className={`w-4 h-4 transition-transform ${showCustomerFilter ? 'rotate-180' : ''}`} />
+            </button>
           </div>
+          
+          {showCustomerFilter && (
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center space-x-4">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="customerFilter"
+                    value="all"
+                    checked={customerFilter === 'all'}
+                    onChange={(e) => setCustomerFilter(e.target.value)}
+                    className="mr-2"
+                  />
+                  <span className="text-sm text-blue-800">全てのメール</span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="customerFilter"
+                    value="customers"
+                    checked={customerFilter === 'customers'}
+                    onChange={(e) => setCustomerFilter(e.target.value)}
+                    className="mr-2"
+                  />
+                  <span className="text-sm text-blue-800">顧客からのメールのみ</span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="customerFilter"
+                    value="non-customers"
+                    checked={customerFilter === 'non-customers'}
+                    onChange={(e) => setCustomerFilter(e.target.value)}
+                    className="mr-2"
+                  />
+                  <span className="text-sm text-blue-800">非顧客からのメールのみ</span>
+                </label>
+              </div>
+              <div className="text-xs text-blue-600">
+                表示中: {filteredEmails.length}件 / 全{emails.length}件
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -256,7 +341,7 @@ const EmailList = ({ onEmailSelect, onClose }) => {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-4">
               <h3 className="text-lg font-medium text-gray-900">
-                メール一覧 ({emails.length}件表示中)
+                メール一覧 ({filteredEmails.length}件表示中)
               </h3>
               {totalLoadedEmails > 0 && (
                 <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
@@ -266,20 +351,20 @@ const EmailList = ({ onEmailSelect, onClose }) => {
             </div>
             <button
               onClick={handleRefresh}
-              disabled={loading}
+              disabled={isLoading}
               className={`flex items-center space-x-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-                loading
+                isLoading
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                   : 'bg-blue-600 text-white hover:bg-blue-700'
               }`}
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
               <span>更新</span>
             </button>
           </div>
         )}
 
-        {loading && (
+        {isLoading && (
           <div className="flex items-center justify-center py-8">
             <div className="flex items-center space-x-2">
               <RefreshCw className="w-5 h-5 animate-spin text-blue-600" />
@@ -288,16 +373,20 @@ const EmailList = ({ onEmailSelect, onClose }) => {
           </div>
         )}
 
-        {!loading && emails.length === 0 && selectedConnection && (
+        {!isLoading && filteredEmails.length === 0 && selectedConnection && (
           <div className="text-center py-8">
             <Mail className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500">顧客からのメールが見つかりません</p>
+            <p className="text-gray-500">
+              {customerFilter === 'all' ? 'メールが見つかりません' : 
+               customerFilter === 'customers' ? '顧客からのメールが見つかりません' : 
+               '非顧客からのメールが見つかりません'}
+            </p>
           </div>
         )}
 
-        {!loading && emails.length > 0 && (
+        {!isLoading && filteredEmails.length > 0 && (
           <div className="space-y-2 max-h-96 overflow-y-auto">
-            {emails.map((email) => (
+            {filteredEmails.map((email) => (
               <div
                 key={email.messageId}
                 onClick={() => handleEmailClick(email)}
@@ -310,6 +399,15 @@ const EmailList = ({ onEmailSelect, onClose }) => {
                       <span className="text-sm font-medium text-gray-900 truncate">
                         {truncateText(email.from, 40)}
                       </span>
+                      {email.isCustomer !== undefined && (
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          email.isCustomer 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {email.isCustomer ? '顧客' : '非顧客'}
+                        </span>
+                      )}
                     </div>
                     <div className="text-sm font-medium text-gray-900 mb-1">
                       {truncateText(email.subject, 60)}
@@ -335,7 +433,7 @@ const EmailList = ({ onEmailSelect, onClose }) => {
         )}
 
         {/* さらに読み込むボタン */}
-        {hasMore && !loading && (
+        {hasMore && !isLoading && (
           <div className="mt-4 flex justify-center">
             <button
               onClick={handleLoadMore}

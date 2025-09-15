@@ -181,26 +181,23 @@ def fetch_email_list_optimized(connection_info, customer_emails, folder='INBOX',
         # 顧客メールアドレスをセットに変換（高速化）
         customer_emails_set = set(customer_emails)
         
-        # 顧客メールアドレスごとに検索して、メッセージIDを収集
-        all_customer_message_ids = set()
+        # 全メールを検索
+        _, message_numbers = mail.search(None, 'ALL')
         
-        for customer_email in customer_emails:
-            try:
-                # 特定の送信者からのメールを検索
-                search_criteria = f'FROM "{customer_email}"'
-                _, message_numbers = mail.search(None, search_criteria)
-                
-                if message_numbers[0]:
-                    message_ids = message_numbers[0].split()
-                    all_customer_message_ids.update(message_ids)
-                    
-            except Exception as e:
-                print(f"顧客 {customer_email} のメール検索中にエラー: {str(e)}")
-                continue
+        if not message_numbers[0]:
+            mail.logout()
+            return {
+                'emails': [],
+                'has_more': False,
+                'next_offset': None,
+                'total_processed': 0
+            }
+        
+        all_message_ids = set(message_numbers[0].split())
         
         # メッセージIDを数値に変換してソート
         message_list = []
-        for msg_id in all_customer_message_ids:
+        for msg_id in all_message_ids:
             try:
                 message_list.append(int(msg_id))
             except ValueError:
@@ -251,13 +248,17 @@ def fetch_email_list_optimized(connection_info, customer_emails, folder='INBOX',
                 if 'multipart' in content_type.lower():
                     has_attachments = True
                 
+                # 顧客からのメールかどうかを判定
+                is_customer = is_customer_email(from_addr, customer_emails_set)
+                
                 email_info = {
                     'messageId': str(num),
                     'subject': subject,
                     'from': from_addr,
                     'to': to_addr,
                     'date': formatted_date,
-                    'hasAttachments': has_attachments
+                    'hasAttachments': has_attachments,
+                    'isCustomer': is_customer
                 }
                 
                 email_list.append(email_info)
@@ -272,14 +273,14 @@ def fetch_email_list_optimized(connection_info, customer_emails, folder='INBOX',
         
         end_time = time.time()
         print(f"DEBUG: Email fetch completed in {end_time - start_time:.2f} seconds")
-        print(f"DEBUG: Found {len(email_list)} customer emails from {processed_count} processed emails")
-        print(f"DEBUG: Total customer emails available: {len(all_customer_message_ids)}")
-        print(f"DEBUG: Offset: {offset}, Limit: {limit}, Has more: {start_index + limit < len(all_customer_message_ids)}")
+        print(f"DEBUG: Found {len(email_list)} emails from {processed_count} processed emails")
+        print(f"DEBUG: Total emails available: {len(all_message_ids)}")
+        print(f"DEBUG: Offset: {offset}, Limit: {limit}, Has more: {start_index + limit < len(all_message_ids)}")
         
         # 次のページがあるかどうかを判定
-        has_more = (start_index + limit) < len(all_customer_message_ids)
+        has_more = (start_index + limit) < len(all_message_ids)
         
-        print(f"DEBUG: Pagination info - start_index: {start_index}, limit: {limit}, total_customer_emails: {len(all_customer_message_ids)}")
+        print(f"DEBUG: Pagination info - start_index: {start_index}, limit: {limit}, total_emails: {len(all_message_ids)}")
         print(f"DEBUG: Pagination info - has_more: {has_more}, next_offset: {start_index + limit if has_more else None}")
         
         return {
@@ -318,11 +319,9 @@ def fetch_email_detail_optimized(connection_info, message_id, customer_emails, f
         cc_addr = decode_email_header(msg.get('Cc', ''))
         date_str = msg.get('Date', '')
         
-        # 顧客からのメールかどうかを確認
+        # 顧客からのメールかどうかを確認（情報として記録）
         customer_emails_set = set(customer_emails)
-        if not is_customer_email(from_addr, customer_emails_set):
-            mail.logout()
-            raise Exception('このメールは顧客からのメールではありません')
+        is_customer = is_customer_email(from_addr, customer_emails_set)
         
         # 日付をパース
         try:
@@ -369,7 +368,8 @@ def fetch_email_detail_optimized(connection_info, message_id, customer_emails, f
             'cc': cc_addr,
             'date': formatted_date,
             'body': body,
-            'attachments': attachments
+            'attachments': attachments,
+            'isCustomer': is_customer
         }
         
         return email_detail

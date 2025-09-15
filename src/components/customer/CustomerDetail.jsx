@@ -5,12 +5,6 @@ import { X } from 'lucide-react';
 import OverviewTab from './tabs/OverviewTab';
 import FileManagementTab from './tabs/FileManagementTab';
 
-import EmailTab from './tabs/EmailTab';
-import LineTab from './tabs/LineTab';
-import InvoiceTab from './tabs/InvoiceTab';
-import ContractTab from './tabs/ContractTab';
-import AIAutomationTab from './tabs/AIAutomationTab';
-import ApprovalTab from './tabs/ApprovalTab';
 
 // モーダルコンポーネントのインポート
 import EmailComposerModal from '../modals/EmailComposerModal';
@@ -48,13 +42,10 @@ const CustomerDetail = ({
   const tabs = [
     { id: '概要', label: '概要', icon: '📊' },
     { id: 'ファイル管理', label: 'ファイル管理', icon: '📁' },
-    { id: '商談記録', label: '商談記録', icon: '📝' },
     { id: 'メール管理', label: 'メール管理', icon: '📧' },
     { id: 'LINE管理', label: 'LINE管理', icon: '💬' },
     { id: '請求書管理', label: '請求書管理', icon: '💰' },
-    { id: '契約書管理', label: '契約書管理', icon: '📋' },
-    { id: 'AI自動化', label: 'AI自動化', icon: '🤖' },
-    { id: '承認待ち (2)', label: '承認待ち (2)', icon: '⏳' }
+    { id: '契約書管理', label: '契約書管理', icon: '📋' }
   ];
 
   const renderTabContent = () => {
@@ -80,22 +71,41 @@ const CustomerDetail = ({
         );
 
       case 'メール管理':
-        return <EmailTab emailHistory={emailHistory} />;
-      case 'LINE管理':
-        return <LineTab lineHistory={lineHistory} />;
-      case '請求書管理':
-        return <InvoiceTab />;
-      case '契約書管理':
-        return <ContractTab />;
-      case 'AI自動化':
         return (
-          <AIAutomationTab
-            aiSettings={aiSettings}
-            setAiSettings={setAiSettings}
-          />
+          <div className="max-w-6xl mx-auto">
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-lg font-bold mb-4">メール管理</h2>
+              <p className="text-gray-600">このタブは開発中です。</p>
+            </div>
+          </div>
         );
-      case '承認待ち (2)':
-        return <ApprovalTab approvalItems={approvalItems} />;
+      case 'LINE管理':
+        return (
+          <div className="max-w-6xl mx-auto">
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-lg font-bold mb-4">LINE管理</h2>
+              <p className="text-gray-600">このタブは開発中です。</p>
+            </div>
+          </div>
+        );
+      case '請求書管理':
+        return (
+          <div className="max-w-6xl mx-auto">
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-lg font-bold mb-4">請求書管理</h2>
+              <p className="text-gray-600">このタブは開発中です。</p>
+            </div>
+          </div>
+        );
+      case '契約書管理':
+        return (
+          <div className="max-w-6xl mx-auto">
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-lg font-bold mb-4">契約書管理</h2>
+              <p className="text-gray-600">このタブは開発中です。</p>
+            </div>
+          </div>
+        );
       default:
         return (
           <div className="max-w-6xl mx-auto">

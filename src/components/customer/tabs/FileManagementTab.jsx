@@ -148,6 +148,22 @@ const FileManagementTab = ({ customerId, currentUser }) => {
     }
   };
 
+  const handleFileUpdate = async () => {
+    if (selectedFile && selectedFile.fileId) {
+      try {
+        console.log('ファイル詳細を再取得中:', selectedFile.fileId);
+        const response = await awsApiClient.request(`/files/${selectedFile.fileId}?customerId=${customerId}`, 'GET');
+        
+        if (response.success) {
+          setSelectedFile(response.file);
+          console.log('ファイル詳細を更新しました');
+        }
+      } catch (error) {
+        console.error('ファイル詳細の再取得に失敗しました:', error);
+      }
+    }
+  };
+
   const handleDrag = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -642,6 +658,7 @@ const FileManagementTab = ({ customerId, currentUser }) => {
                     file={selectedFile}
                     customerId={customerId}
                     currentUser={currentUser}
+                    onFileUpdate={handleFileUpdate}
                   />
                 </div>
               )}

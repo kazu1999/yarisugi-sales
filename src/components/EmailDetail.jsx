@@ -145,14 +145,21 @@ ${emailDetail.body || ''}
           </h2>
         </div>
         <div className="flex items-center space-x-2">
-          <button
-            onClick={generateAiReply}
-            disabled={aiReplyLoading || !emailDetail}
-            className="flex items-center px-3 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50"
-          >
-            <Bot className="w-4 h-4 mr-1" />
-            {aiReplyLoading ? 'AI生成中...' : 'AI返信提案'}
-          </button>
+          <div className="relative group">
+            <button
+              onClick={generateAiReply}
+              disabled={aiReplyLoading || !emailDetail}
+              className="flex items-center px-3 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50"
+            >
+              <Bot className="w-4 h-4 mr-1" />
+              {aiReplyLoading ? 'AI生成中...' : 'AI返信提案'}
+            </button>
+            {/* カスタムツールチップ */}
+            <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
+              FAQをもとにして返します
+              <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+            </div>
+          </div>
           <button
             onClick={() => setShowReplyModal(true)}
             className="flex items-center px-3 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"

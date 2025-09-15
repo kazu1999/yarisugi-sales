@@ -4,10 +4,8 @@ import {
   MessageSquare, 
   Brain,
   X,
-  Sparkles,
   FileText,
   ExternalLink,
-  Clock,
   Tag
 } from 'lucide-react';
 
@@ -41,13 +39,6 @@ const RagSearch = ({
     }
   };
 
-  // 検索履歴（実装例）
-  const searchHistory = [
-    '料金体系について教えて',
-    'セキュリティポリシーの詳細',
-    'API利用方法',
-    'サポート体制について'
-  ];
 
   if (!showRagSearch) return null;
 
@@ -56,12 +47,15 @@ const RagSearch = ({
       <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-hidden">
         {/* ヘッダー */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-gradient-to-r from-purple-600 to-blue-600 text-white">
-          <div className="flex items-center gap-3">
-            <Brain className="w-6 h-6" />
-            <h3 className="text-lg font-semibold">AI ナレッジ検索</h3>
-            <span className="px-2 py-1 bg-white bg-opacity-20 rounded-full text-xs">
-              RAG powered
-            </span>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-3">
+              <Brain className="w-6 h-6" />
+              <h3 className="text-lg font-semibold">AI ナレッジ検索</h3>
+              <span className="px-2 py-1 bg-white bg-opacity-20 rounded-full text-xs">
+                RAG powered
+              </span>
+            </div>
+            <p className="text-sm text-white text-opacity-90 ml-9">入力されたナレッジをもとに検索</p>
           </div>
           <button
             onClick={() => {
@@ -117,38 +111,7 @@ const RagSearch = ({
               </button>
             </form>
 
-            {/* 検索履歴 */}
-            <div>
-              <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
-                <Clock className="w-4 h-4" />
-                検索履歴
-              </h4>
-              <div className="space-y-2">
-                {searchHistory.map((query, index) => (
-                  <button
-                    key={index}
-                    onClick={() => setRagQuery(query)}
-                    className="w-full text-left p-3 text-sm bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
-                    disabled={isSearching}
-                  >
-                    {query}
-                  </button>
-                ))}
-              </div>
-            </div>
 
-            {/* 使い方ガイド */}
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <h4 className="text-sm font-medium text-blue-900 mb-2 flex items-center gap-2">
-                <Sparkles className="w-4 h-4" />
-                使い方のコツ
-              </h4>
-              <ul className="text-xs text-blue-800 space-y-1">
-                <li>• 具体的な質問をすると良い回答が得られます</li>
-                <li>• 「〜について教えて」「〜の方法は？」など</li>
-                <li>• ナレッジベースに登録された情報から回答します</li>
-              </ul>
-            </div>
           </div>
 
           {/* 右側: 結果表示パネル */}
@@ -235,28 +198,6 @@ const RagSearch = ({
                   </div>
                 )}
 
-                {/* 関連する追加質問の提案 */}
-                <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-                  <h4 className="text-sm font-medium text-yellow-800 mb-2 flex items-center gap-2">
-                    <Sparkles className="w-4 h-4" />
-                    さらに詳しく知りたい場合
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      `${ragQuery.split('について')[0]}の具体的な手順は？`,
-                      `${ragQuery.split('について')[0]}の注意点は？`,
-                      `${ragQuery.split('について')[0]}の事例を教えて`
-                    ].map((suggestion, index) => (
-                      <button
-                        key={index}
-                        onClick={() => setRagQuery(suggestion)}
-                        className="px-3 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full hover:bg-yellow-200 transition-colors"
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
             )}
           </div>

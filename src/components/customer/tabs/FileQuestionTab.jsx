@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MessageCircle, Send, Clock, User, RefreshCw } from 'lucide-react';
 import { awsApiClient } from '../../../utils/awsApiClient';
 
-const FileQuestionTab = ({ file, customerId, currentUser }) => {
+const FileQuestionTab = ({ file, customerId, currentUser, onFileUpdate }) => {
   const [questions, setQuestions] = useState([]);
   const [newQuestion, setNewQuestion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -78,8 +78,10 @@ const FileQuestionTab = ({ file, customerId, currentUser }) => {
 
       if (response.success) {
         alert('ファイルテキストの生成が完了しました。質問機能が利用可能になりました。');
-        // ページをリロードして最新の状態を反映
-        window.location.reload();
+        // ファイルの詳細を再取得して最新の状態を反映
+        if (onFileUpdate) {
+          onFileUpdate();
+        }
       } else {
         alert(response.error || 'ファイルテキストの生成に失敗しました');
       }
@@ -129,12 +131,12 @@ const FileQuestionTab = ({ file, customerId, currentUser }) => {
             {generatingText ? (
               <>
                 <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                生成中...
+                リロード中...
               </>
             ) : (
               <>
                 <RefreshCw className="w-3 h-3" />
-                テキスト生成
+                リロード
               </>
             )}
           </button>

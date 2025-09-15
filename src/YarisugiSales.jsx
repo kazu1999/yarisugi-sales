@@ -155,6 +155,14 @@ const YarisugiDashboard = () => {
   const [showEmailList, setShowEmailList] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [selectedConnection, setSelectedConnection] = useState(null);
+  
+  // メール一覧のキャッシュ
+  const [cachedEmails, setCachedEmails] = useState([]);
+  const [emailListLoading, setEmailListLoading] = useState(false);
+  const [emailListError, setEmailListError] = useState('');
+  const [emailListHasMore, setEmailListHasMore] = useState(false);
+  const [emailListNextOffset, setEmailListNextOffset] = useState(null);
+  const [emailListTotalLoaded, setEmailListTotalLoaded] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
   
   // AIファイルアップロード用の状態
@@ -208,7 +216,17 @@ const YarisugiDashboard = () => {
   // メール機能用のハンドラー
   const handleEmailConnectionSuccess = (connectionId) => {
     console.log('Email connection saved:', connectionId);
-    // 必要に応じて追加の処理を実装
+    
+    // 接続情報を作成してselectedConnectionに設定
+    const connection = {
+      connectionId: connectionId,
+      // 他の必要な情報があれば追加
+    };
+    
+    setSelectedConnection(connection);
+    
+    // 自動でメール一覧を取得
+    fetchEmailsForCache(connection);
   };
 
   const handleEmailSelect = (email, connection) => {
@@ -222,6 +240,51 @@ const YarisugiDashboard = () => {
   const handleBackToEmailList = () => {
     setShowEmailDetail(false);
     setShowEmailList(true);
+    // メール一覧の状態を保持するため、selectedEmailはクリアしない
+    // selectedConnectionは保持してメール一覧で使用
+  };
+
+  // メール一覧の取得とキャッシュ管理
+  const fetchEmailsForCache = async (connection) => {
+    if (!connection) return;
+    
+    setEmailListLoading(true);
+    setEmailListError('');
+    
+    try {
+      const params = {
+        connectionId: connection.connectionId,
+        folder: 'INBOX',
+        limit: 15,
+        offset: 0
+      };
+      
+      const response = await awsApiClient.request('/email/messages', {
+        method: 'GET',
+        params: params
+      });
+
+      if (response.success) {
+        setCachedEmails(response.emails || []);
+        setEmailListHasMore(response.has_more || false);
+        setEmailListNextOffset(response.next_offset || null);
+        setEmailListTotalLoaded(response.emails?.length || 0);
+      } else {
+        setEmailListError(response.error || 'メール一覧の取得に失敗しました。');
+      }
+    } catch (err) {
+      setEmailListError('メール一覧の取得中にエラーが発生しました。');
+      console.error('Fetch emails error:', err);
+    } finally {
+      setEmailListLoading(false);
+    }
+  };
+
+  // メール一覧の更新（リフレッシュ用）
+  const refreshEmailList = () => {
+    if (selectedConnection) {
+      fetchEmailsForCache(selectedConnection);
+    }
   };
 
   const handleEmailListClose = () => {
@@ -1440,28 +1503,10 @@ const YarisugiDashboard = () => {
             <div>
               <div className="mb-6">
                 <h1 className="text-2xl font-bold text-gray-900">AIメール</h1>
-                <p className="text-gray-600 mt-2">メールアカウントの接続とメール管理</p>
+                <p className="text-gray-600 mt-2">メールアカウントの接続とメール管理・FAQをもとにしたAI返信提案</p>
               </div>
 
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200">
-                  <div className="flex gap-3 items-center">
-                    <Button 
-                      onClick={() => setShowEmailModal(true)}
-                      className="flex items-center gap-2"
-                    >
-                      <Mail className="w-4 h-4" />
-                      メール接続
-                    </Button>
-                    <Button 
-                      onClick={() => setShowEmailList(!showEmailList)}
-                      className="flex items-center gap-2"
-                    >
-                      <Mail className="w-4 h-4" />
-                      {showEmailList ? 'メール一覧を閉じる' : 'メール一覧'}
-                    </Button>
-                </div>
-                    </div>
                 
                 <div className="p-6">
                   {showEmailDetail ? (
@@ -1474,6 +1519,15 @@ const YarisugiDashboard = () => {
                     <EmailList 
                       onEmailSelect={handleEmailSelect}
                       onClose={handleEmailListClose}
+                      selectedConnection={selectedConnection}
+                      cachedEmails={cachedEmails}
+                      loading={emailListLoading}
+                      error={emailListError}
+                      hasMore={emailListHasMore}
+                      nextOffset={emailListNextOffset}
+                      totalLoadedEmails={emailListTotalLoaded}
+                      onRefresh={refreshEmailList}
+                      onFetchEmails={fetchEmailsForCache}
                     />
                   ) : (
                     <div className="text-center py-12">
@@ -1491,19 +1545,27 @@ const YarisugiDashboard = () => {
                           メール接続設定
                         </Button>
                         <Button 
-                          onClick={() => setShowEmailList(true)}
+                          onClick={() => {
+                            setShowEmailList(true);
+                            // メール一覧を表示する際にキャッシュを取得
+                            if (selectedConnection) {
+                              fetchEmailsForCache(selectedConnection);
+                            }
+                            // selectedConnectionが設定されていない場合は、EmailListコンポーネント内で
+                            // 接続選択時に自動でメール一覧が取得される
+                          }}
                           variant="outline"
                           className="flex items-center gap-2"
                         >
                           <Mail className="w-4 h-4" />
                           メール一覧表示
                         </Button>
-                  </div>
                 </div>
+                    </div>
                   )}
-                        </div>
-                        </div>
-                        </div>
+                </div>
+              </div>
+            </div>
           )}
 
           {activePage === 'faq' && (
@@ -1511,8 +1573,8 @@ const YarisugiDashboard = () => {
               <div className="mb-6">
                 <h1 className="text-2xl font-bold text-gray-900">FAQ管理システム</h1>
                 <p className="text-gray-600 mt-2">よくある質問の管理とAI自動生成</p>
-                  </div>
-                  
+                </div>
+                
               {/* デバッグ情報 */}
               <div className="mb-4 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
                 <p>Debug: faqs.length = {faqs.length}</p>
@@ -2263,6 +2325,11 @@ const YarisugiDashboard = () => {
 
           {activePage === 'database' && (
             <div>
+              <div className="mb-6">
+                <h1 className="text-2xl font-bold text-gray-900">ナレッジDB</h1>
+                <p className="text-gray-600 mt-2">社内ナレッジの管理・AI検索</p>
+              </div>
+
               <KnowledgeManager
                 knowledgeEntries={knowledgeEntries}
                 loading={knowledgeLoading}

@@ -12,14 +12,34 @@ const EmailReplyModal = ({ isOpen, onClose, originalEmail, connection, onReplySe
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // メールアドレスを抽出する関数
+  const extractEmailAddress = (emailString) => {
+    if (!emailString) return '';
+    
+    // 「名前<メアド>」形式の場合、メアド部分を抽出
+    const emailMatch = emailString.match(/<([^>]+)>/);
+    if (emailMatch) {
+      return emailMatch[1];
+    }
+    
+    // メールアドレスのみの場合、そのまま返す
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (emailRegex.test(emailString.trim())) {
+      return emailString.trim();
+    }
+    
+    // その他の場合は空文字を返す
+    return '';
+  };
+
   useEffect(() => {
     if (isOpen && originalEmail) {
       // AI返信提案がある場合はそれを使用、なければ通常の返信形式
       const hasAiReply = originalEmail.aiReply && originalEmail.aiReply.trim();
       
       setFormData({
-        to: originalEmail.from || '',
-        cc: originalEmail.cc || '',
+        to: extractEmailAddress(originalEmail.from) || '',
+        cc: extractEmailAddress(originalEmail.cc) || '',
         subject: `Re: ${originalEmail.subject || ''}`,
         body: hasAiReply 
           ? originalEmail.aiReply 

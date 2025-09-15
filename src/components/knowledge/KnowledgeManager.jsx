@@ -166,13 +166,20 @@ const KnowledgeManager = ({
             ナレッジベース管理
           </h2>
           <div className="flex gap-2">
-            <button
-              onClick={() => setShowRagSearch(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-            >
-              <MessageSquare className="w-4 h-4" />
-              ナレッジ検索
-            </button>
+            <div className="relative group">
+              <button
+                onClick={() => setShowRagSearch(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                <MessageSquare className="w-4 h-4" />
+                ナレッジ検索
+              </button>
+              {/* カスタムツールチップ */}
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
+                ナレッジ全体をもとに検索
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+              </div>
+            </div>
             <button
               onClick={() => setShowKnowledgeForm(true)}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -261,7 +268,7 @@ const KnowledgeManager = ({
             />
           </label>
           <p className="text-sm text-gray-500 mt-2">
-            対応形式: TXT, MD, PDF, DOC, DOCX（最大10MB）
+            対応形式: PDF (最大10MB)
           </p>
         </div>
       </div>
