@@ -168,6 +168,14 @@ class AwsApiClient {
     });
   }
 
+  // FAQチャット関連API
+  async sendFaqChatMessage(question) {
+    return this.request('/faq-chat', {
+      method: 'POST',
+      body: JSON.stringify({ question })
+    });
+  }
+
   // AI自動生成API
   async generateFaqsFromContent(content, contentType = 'text', saveToDb = false) {
     console.log('🚀 AI生成API呼び出し開始:', { 

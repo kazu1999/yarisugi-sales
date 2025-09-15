@@ -27,6 +27,7 @@ import EmailConnectionModal from './components/modals/EmailConnectionModal';
 
 import EmailList from './components/EmailList';
 import EmailDetail from './components/EmailDetail';
+import FaqChat from './components/faq/FaqChat';
 // import CustomerDetail from './components/customer/CustomerDetail';
 
 const YarisugiDashboard = () => {
@@ -164,6 +165,9 @@ const YarisugiDashboard = () => {
   const [emailListNextOffset, setEmailListNextOffset] = useState(null);
   const [emailListTotalLoaded, setEmailListTotalLoaded] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  
+  // FAQチャット機能の状態
+  const [showFaqChat, setShowFaqChat] = useState(false);
   
   // AIファイルアップロード用の状態
   const [aiUploadedFile, setAiUploadedFile] = useState(null);
@@ -1646,6 +1650,15 @@ const YarisugiDashboard = () => {
                         <Brain className="w-4 h-4" />
                         AI生成
                       </Button>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => setShowFaqChat(!showFaqChat)}
+                        className="flex items-center gap-2"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                        FAQチャット
+                      </Button>
                   </div>
                   
                     {/* カテゴリフィルター */}
@@ -1987,6 +2000,28 @@ const YarisugiDashboard = () => {
                   </div>
                 </div>
               </div>
+                </div>
+              )}
+
+              {/* FAQチャット機能 */}
+              {showFaqChat && (
+                <div className="mt-6">
+                  <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+                    <div className="px-6 py-4 border-b border-gray-200">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-gray-900">FAQチャット</h3>
+                        <button
+                          onClick={() => setShowFaqChat(false)}
+                          className="text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="h-96">
+                      <FaqChat faqs={faqs} />
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -3450,7 +3485,7 @@ ${selectedProcess.name}の件でご連絡させていただきました。
                             >
                               📁 ファイルを選択
                             </label>
-                            <p className="text-sm text-gray-500 mt-2">対応形式: PDF, TXT, DOC, DOCX (最大10MB)</p>
+                            <p className="text-sm text-gray-500 mt-2">対応形式: PDF (最大10MB)</p>
                           </div>
                           
                                                      {/* ファイル処理中のローディング */}

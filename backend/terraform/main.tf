@@ -22,6 +22,7 @@ locals {
   faqs_integration_uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.faqs_api.arn}/invocations"
   ai_generator_integration_uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.ai_generator.arn}/invocations"
   s3_presigned_url_integration_uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.s3_presigned_url.arn}/invocations"
+  faq_chat_integration_uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.faq_chat.arn}/invocations"
 }
 
 # S3バケット（ファイルアップロード用）
@@ -837,6 +838,30 @@ resource "aws_api_gateway_method" "ai_generate_options" {
   authorization = "NONE"
 }
 
+# FAQチャットAPIリソース
+resource "aws_api_gateway_resource" "faq_chat" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "faq-chat"
+}
+
+# FAQチャット (POST /faq-chat)
+resource "aws_api_gateway_method" "faq_chat_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.faq_chat.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# CORS用のOPTIONSメソッド (faq-chat)
+resource "aws_api_gateway_method" "faq_chat_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.faq_chat.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
 # Lambda関数との統合
 resource "aws_api_gateway_integration" "customers_get" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -977,6 +1002,39 @@ resource "aws_lambda_permission" "ai_generator" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*/*"
 }
 
+# FAQチャットLambda関数
+resource "aws_lambda_function" "faq_chat" {
+  filename         = "../lambda_functions/faq_chat/faq_chat_lambda.zip"
+  function_name    = "${var.project_name}-faq-chat-${var.environment}"
+  role            = aws_iam_role.ai_lambda_role.arn
+  handler         = "faq_chat.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 60
+  memory_size     = 512
+  source_code_hash = filebase64sha256("../lambda_functions/faq_chat/faq_chat_lambda.zip")
+
+  environment {
+    variables = {
+      FAQS_TABLE = aws_dynamodb_table.faqs.name
+      OPENAI_API_KEY_SECRET_NAME = "yarisugi-sales-openai-api-key-dev"
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# FAQチャットLambda関数の権限
+resource "aws_lambda_permission" "faq_chat" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.faq_chat.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*/*"
+}
+
 # FAQ API Gateway統合
 resource "aws_api_gateway_integration" "faqs_get" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -1064,6 +1122,19 @@ resource "aws_api_gateway_integration" "ai_generate_post" {
   depends_on = [aws_lambda_permission.ai_generator]
 }
 
+# FAQチャットAPI Gateway統合
+resource "aws_api_gateway_integration" "faq_chat_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faq_chat.id
+  http_method = aws_api_gateway_method.faq_chat_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = local.faq_chat_integration_uri
+
+  depends_on = [aws_lambda_permission.faq_chat]
+}
+
 # CORS用の統合 (ai-generate)
 resource "aws_api_gateway_integration" "ai_generate_options" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -1097,6 +1168,47 @@ resource "aws_api_gateway_integration_response" "ai_generate_options" {
   resource_id = aws_api_gateway_resource.ai_generate.id
   http_method = aws_api_gateway_method.ai_generate_options.http_method
   status_code = aws_api_gateway_method_response.ai_generate_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Authorization,Content-Type,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,Origin'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
+# CORS用の統合 (faq-chat)
+resource "aws_api_gateway_integration" "faq_chat_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faq_chat.id
+  http_method = aws_api_gateway_method.faq_chat_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# CORS用のメソッドレスポンス (faq-chat)
+resource "aws_api_gateway_method_response" "faq_chat_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faq_chat.id
+  http_method = aws_api_gateway_method.faq_chat_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+# CORS用の統合レスポンス (faq-chat)
+resource "aws_api_gateway_integration_response" "faq_chat_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.faq_chat.id
+  http_method = aws_api_gateway_method.faq_chat_options.http_method
+  status_code = aws_api_gateway_method_response.faq_chat_options.status_code
 
   response_parameters = {
     "method.response.header.Access-Control-Allow-Headers" = "'Authorization,Content-Type,X-Amz-Date,X-Api-Key,X-Amz-Security-Token,Origin'"
@@ -3682,6 +3794,12 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.ai_generate_options,
     aws_api_gateway_method_response.ai_generate_options,
     aws_api_gateway_integration_response.ai_generate_options,
+    aws_api_gateway_method.faq_chat_post,
+    aws_api_gateway_integration.faq_chat_post,
+    aws_api_gateway_method.faq_chat_options,
+    aws_api_gateway_integration.faq_chat_options,
+    aws_api_gateway_method_response.faq_chat_options,
+    aws_api_gateway_integration_response.faq_chat_options,
     aws_api_gateway_method.company_profile_get,
     aws_api_gateway_integration.company_profile_get,
     aws_api_gateway_method.company_profile_put,
