@@ -81,5 +81,10 @@ backend/lambda_functions/*/*.dist-info/
 backend/lambda_functions/*/bin/
 backend/lambda_functions/*/build/
 
+# BeautifulSoup4 and related libraries
+backend/lambda_functions/*/bs4/
+backend/lambda_functions/*/soupsieve/
+backend/lambda_functions/*/beautifulsoup4*.dist-info/
+
 # Lambda zip files
 *.zip
