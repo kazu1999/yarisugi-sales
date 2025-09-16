@@ -1876,6 +1876,13 @@ resource "aws_api_gateway_resource" "files_upload" {
   path_part   = "upload"
 }
 
+# URLアップロード用リソース
+resource "aws_api_gateway_resource" "files_upload_url" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_resource.files.id
+  path_part   = "upload-url"
+}
+
 # 個別ファイル管理API リソース
 resource "aws_api_gateway_resource" "file_item" {
   rest_api_id = aws_api_gateway_rest_api.main.id
@@ -2101,6 +2108,22 @@ resource "aws_api_gateway_method" "files_upload_post" {
 resource "aws_api_gateway_method" "files_upload_options" {
   rest_api_id   = aws_api_gateway_rest_api.main.id
   resource_id   = aws_api_gateway_resource.files_upload.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# URLアップロード用メソッド
+resource "aws_api_gateway_method" "files_upload_url_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.files_upload_url.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+resource "aws_api_gateway_method" "files_upload_url_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.files_upload_url.id
   http_method   = "OPTIONS"
   authorization = "NONE"
 }
@@ -3073,6 +3096,29 @@ resource "aws_api_gateway_integration" "files_upload_options" {
   }
 }
 
+# URLアップロード用インテグレーション
+resource "aws_api_gateway_integration" "files_upload_url_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_upload_url.id
+  http_method = aws_api_gateway_method.files_upload_url_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.file_manager.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "files_upload_url_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_upload_url.id
+  http_method = aws_api_gateway_method.files_upload_url_options.http_method
+
+  type = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
 resource "aws_api_gateway_integration" "file_item_get" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   resource_id = aws_api_gateway_resource.file_item.id
@@ -3435,6 +3481,20 @@ resource "aws_api_gateway_method_response" "files_upload_options" {
   }
 }
 
+# URLアップロード用メソッドレスポンス
+resource "aws_api_gateway_method_response" "files_upload_url_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_upload_url.id
+  http_method = aws_api_gateway_method.files_upload_url_options.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
 resource "aws_api_gateway_method_response" "file_item_options" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   resource_id = aws_api_gateway_resource.file_item.id
@@ -3647,6 +3707,20 @@ resource "aws_api_gateway_integration_response" "files_upload_options" {
   }
 }
 
+# URLアップロード用インテグレーションレスポンス
+resource "aws_api_gateway_integration_response" "files_upload_url_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.files_upload_url.id
+  http_method = aws_api_gateway_method.files_upload_url_options.http_method
+  status_code = aws_api_gateway_method_response.files_upload_url_options.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,PUT,DELETE,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = "'*'"
+  }
+}
+
 resource "aws_api_gateway_integration_response" "file_item_options" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   resource_id = aws_api_gateway_resource.file_item.id
@@ -3720,6 +3794,13 @@ resource "aws_api_gateway_deployment" "main" {
     aws_api_gateway_integration.files_upload_options,
     aws_api_gateway_method_response.files_upload_options,
     aws_api_gateway_integration_response.files_upload_options,
+    # URLアップロード関連のリソース
+    aws_api_gateway_method.files_upload_url_post,
+    aws_api_gateway_integration.files_upload_url_post,
+    aws_api_gateway_method.files_upload_url_options,
+    aws_api_gateway_integration.files_upload_url_options,
+    aws_api_gateway_method_response.files_upload_url_options,
+    aws_api_gateway_integration_response.files_upload_url_options,
     aws_api_gateway_method.file_item_get,
     aws_api_gateway_integration.file_item_get,
     aws_api_gateway_method.file_item_delete,

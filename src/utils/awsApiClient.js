@@ -202,6 +202,29 @@ class AwsApiClient {
     }
   }
 
+  // AI自動生成API（URL対応）
+  async generateFaqs(data) {
+    console.log('🚀 AI生成API呼び出し開始（URL対応）:', { 
+      url: data.url || 'N/A',
+      content: data.content ? data.content.substring(0, 100) + '...' : 'N/A', 
+      contentType: data.contentType || 'text', 
+      saveToDb: data.saveToDb || false,
+      endpoint: `${this.baseURL}/ai-generate`
+    });
+    
+    try {
+      const result = await this.request('/ai-generate', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      console.log('✅ AI生成API成功（URL対応）:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ AI生成APIエラー（URL対応）:', error);
+      throw error;
+    }
+  }
+
   async generateFaqsFromFile(file, saveToDb = false) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -217,6 +240,51 @@ class AwsApiClient {
       };
       reader.onerror = () => reject(new Error('File reading failed'));
       reader.readAsDataURL(file);
+    });
+  }
+
+  // ファイル管理関連API
+  async uploadFile(data) {
+    return this.request('/files/upload', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async uploadUrl(data) {
+    return this.request('/files/upload-url', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getFiles(customerId) {
+    return this.request(`/files?customerId=${customerId}`, 'GET');
+  }
+
+  async getFileDetail(fileId, customerId) {
+    return this.request(`/files/${fileId}?customerId=${customerId}`, 'GET');
+  }
+
+  async deleteFile(fileId) {
+    return this.request(`/files/${fileId}`, 'DELETE');
+  }
+
+  async askFileQuestion(data) {
+    return this.request('/files/question', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getFileQuestions(customerId) {
+    return this.request(`/files/questions?customerId=${customerId}`, 'GET');
+  }
+
+  async generateFileText(data) {
+    return this.request('/files/generate-text', {
+      method: 'POST',
+      body: JSON.stringify(data)
     });
   }
 

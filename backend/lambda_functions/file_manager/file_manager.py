@@ -12,6 +12,9 @@ import openai
 from decimal import Decimal
 import subprocess
 import tempfile
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse
+import re
 
 # AWS クライアントの初期化
 dynamodb = boto3.resource('dynamodb')
@@ -46,6 +49,134 @@ def get_openai_client():
     except Exception as e:
         print(f"Error getting OpenAI API key: {e}")
         return None
+
+# URLコンテンツ取得関数
+def validate_url(url: str) -> bool:
+    """URLの妥当性をチェック"""
+    try:
+        result = urlparse(url)
+        return all([result.scheme, result.netloc]) and result.scheme in ['http', 'https']
+    except Exception:
+        return False
+
+def fetch_url_content(url: str) -> Dict[str, Any]:
+    """URLからコンテンツを取得してテキストを抽出"""
+    try:
+        # URLの妥当性チェック
+        if not validate_url(url):
+            return {
+                'success': False,
+                'error': 'Invalid URL format'
+            }
+        
+        # リクエストヘッダーを設定（User-Agentを追加してブロックを回避）
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'ja,en-US;q=0.7,en;q=0.3',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        }
+        
+        # タイムアウトを設定（30秒）
+        response = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
+        response.raise_for_status()
+        
+        # コンテンツタイプをチェック
+        content_type = response.headers.get('content-type', '').lower()
+        if 'text/html' not in content_type:
+            return {
+                'success': False,
+                'error': f'Unsupported content type: {content_type}'
+            }
+        
+        # HTMLをパース
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # 不要なタグを削除
+        for tag in soup(['script', 'style', 'nav', 'footer', 'header', 'aside', 'noscript']):
+            tag.decompose()
+        
+        # メインコンテンツを抽出
+        content_text = ""
+        
+        # タイトルを取得
+        title = soup.find('title')
+        if title:
+            content_text += f"タイトル: {title.get_text().strip()}\n\n"
+        
+        # h1タグを取得
+        h1_tags = soup.find_all('h1')
+        if h1_tags:
+            content_text += "見出し1:\n"
+            for h1 in h1_tags:
+                content_text += f"- {h1.get_text().strip()}\n"
+            content_text += "\n"
+        
+        # h2-h6タグを取得
+        for level in range(2, 7):
+            h_tags = soup.find_all(f'h{level}')
+            if h_tags:
+                content_text += f"見出し{level}:\n"
+                for h in h_tags:
+                    content_text += f"- {h.get_text().strip()}\n"
+                content_text += "\n"
+        
+        # 段落テキストを取得
+        paragraphs = soup.find_all(['p', 'article', 'section', 'div'])
+        paragraph_text = ""
+        for p in paragraphs:
+            text = p.get_text().strip()
+            if text and len(text) > 20:  # 短すぎるテキストは除外
+                paragraph_text += text + "\n\n"
+        
+        content_text += paragraph_text
+        
+        # テキストをクリーンアップ
+        content_text = re.sub(r'\n\s*\n', '\n\n', content_text)  # 複数の改行を2つに統一
+        content_text = re.sub(r'[ \t]+', ' ', content_text)  # 複数のスペースを1つに統一
+        content_text = content_text.strip()
+        
+        # テキストが短すぎる場合はエラー
+        if len(content_text) < 100:
+            return {
+                'success': False,
+                'error': 'Content too short or no meaningful text found'
+            }
+        
+        # 長すぎる場合は切り詰め（8000文字まで）
+        if len(content_text) > 8000:
+            content_text = content_text[:8000] + "..."
+        
+        return {
+            'success': True,
+            'content': content_text,
+            'url': url,
+            'title': title.get_text().strip() if title else 'No title',
+            'content_length': len(content_text)
+        }
+        
+    except requests.exceptions.Timeout:
+        return {
+            'success': False,
+            'error': 'Request timeout - URL took too long to respond'
+        }
+    except requests.exceptions.ConnectionError:
+        return {
+            'success': False,
+            'error': 'Connection error - Could not connect to URL'
+        }
+    except requests.exceptions.HTTPError as e:
+        return {
+            'success': False,
+            'error': f'HTTP error: {e.response.status_code}'
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to fetch URL content: {str(e)}'
+        }
 
 # 音声ファイル圧縮関数
 def compress_audio(audio_content: bytes, file_extension: str, target_size_mb: int = 20) -> bytes:
@@ -449,7 +580,8 @@ def save_file_to_s3(file_content: bytes, file_name: str, customer_id: str) -> st
         raise e
 
 def save_file_metadata(file_id: str, customer_id: str, file_name: str, file_type: str, 
-                      file_size: int, s3_key: str, summary: str, user_id: str, file_text: str = "") -> Dict[str, Any]:
+                      file_size: int, s3_key: str, summary: str, user_id: str, file_text: str = "", 
+                      url: str = "", original_title: str = "") -> Dict[str, Any]:
     """ファイルのメタデータをDynamoDBに保存"""
     try:
         table = dynamodb.Table(CUSTOMER_FILES_TABLE)
@@ -470,11 +602,187 @@ def save_file_metadata(file_id: str, customer_id: str, file_name: str, file_type
             'status': 'active'
         }
         
+        # URL関連のフィールドを追加（URLアップロードの場合）
+        if url:
+            item['url'] = url
+        if original_title:
+            item['originalTitle'] = original_title
+        
         table.put_item(Item=item)
         return item
     except Exception as e:
         print(f"Error saving file metadata: {e}")
         raise e
+
+def handle_url_upload(event: Dict[str, Any]) -> Dict[str, Any]:
+    """URLアップロード処理"""
+    try:
+        print("handle_url_upload function called")
+        # リクエストボディの解析
+        body = json.loads(event.get('body', '{}'))
+        customer_id = body.get('customerId')
+        url = body.get('url')
+        user_id = body.get('userId', 'unknown')
+        
+        print(f"Parsed parameters - customer_id: {customer_id}, url: {url}, user_id: {user_id}")
+        
+        if not customer_id or not url:
+            return {
+                'statusCode': 400,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+                },
+                'body': json.dumps({
+                    'success': False,
+                    'error': 'customerId and url are required'
+                })
+            }
+        
+        print(f"URLアップロード開始: {url}")
+        
+        # URLからコンテンツを取得
+        url_result = fetch_url_content(url)
+        
+        if not url_result['success']:
+            return {
+                'statusCode': 400,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+                },
+                'body': json.dumps({
+                    'success': False,
+                    'error': f'Failed to fetch URL content: {url_result["error"]}'
+                })
+            }
+        
+        content = url_result['content']
+        title = url_result['title']
+        
+        print(f"URLコンテンツ取得成功: {url_result['content_length']} characters")
+        print(f"タイトル: {title}")
+        
+        # ファイルIDを生成
+        file_id = str(uuid.uuid4())
+        
+        # ファイル名を生成（URLのドメイン名を使用）
+        try:
+            parsed_url = urlparse(url)
+            domain = parsed_url.netloc.replace('www.', '')
+            # タイトルから.txt拡張子を削除
+            clean_title = title[:50] if title != 'No title' else 'content'
+            file_name = f"{domain}_{clean_title}"
+        except:
+            file_name = f"url_content_{file_id[:8]}"
+        
+        # テキストファイルとしてS3に保存
+        s3_key = f"customer-files/{customer_id}/{file_id}/{file_name}"
+        
+        try:
+            s3.put_object(
+                Bucket=S3_BUCKET,
+                Key=s3_key,
+                Body=content.encode('utf-8'),
+                ContentType='text/plain'
+            )
+            print(f"S3に保存完了: {s3_key}")
+        except Exception as e:
+            print(f"S3保存エラー: {e}")
+            return {
+                'statusCode': 500,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+                },
+                'body': json.dumps({
+                    'success': False,
+                    'error': 'Failed to save content to S3'
+                })
+            }
+        
+        # 要約を生成
+        summary = ""
+        try:
+            openai_client = get_openai_client()
+            if openai_client:
+                summary = generate_summary(content, "URL")
+                print(f"要約生成完了: {len(summary)} characters")
+            else:
+                print("OpenAI client not available, skipping summary generation")
+        except Exception as e:
+            print(f"要約生成エラー: {e}")
+            summary = "要約の生成に失敗しました。"
+        
+        # DynamoDBにメタデータを保存
+        try:
+            file_metadata = save_file_metadata(
+                file_id=file_id,
+                customer_id=customer_id,
+                file_name=file_name,
+                file_type='url',
+                file_size=len(content.encode('utf-8')),
+                s3_key=s3_key,
+                summary=summary,
+                user_id=user_id,
+                file_text=content,
+                url=url,
+                original_title=title
+            )
+            
+            print(f"メタデータ保存完了: {file_id}")
+            
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+                },
+                'body': json.dumps({
+                    'success': True,
+                    'file': convert_decimals(file_metadata)
+                })
+            }
+            
+        except Exception as e:
+            print(f"メタデータ保存エラー: {e}")
+            return {
+                'statusCode': 500,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+                },
+                'body': json.dumps({
+                    'success': False,
+                    'error': 'Failed to save file metadata'
+                })
+            }
+            
+    except Exception as e:
+        print(f"URLアップロードエラー: {e}")
+        return {
+            'statusCode': 500,
+            'headers': {
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+            },
+            'body': json.dumps({
+                'success': False,
+                'error': str(e)
+            })
+        }
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """メインのLambda関数"""
@@ -485,7 +793,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         http_method = event.get('httpMethod', '')
         path = event.get('path', '')
         
-        if http_method == 'POST' and '/files/upload' in path:
+        print(f"HTTP Method: {http_method}, Path: {path}")
+        
+        if http_method == 'POST' and '/files/upload-url' in path:
+            print("Routing to handle_url_upload")
+            return handle_url_upload(event)
+        elif http_method == 'POST' and '/files/upload' in path:
+            print("Routing to handle_file_upload")
             return handle_file_upload(event)
         elif http_method == 'POST' and '/files/question' in path:
             return handle_file_question(event)
@@ -908,7 +1222,9 @@ def handle_file_detail(event: Dict[str, Any]) -> Dict[str, Any]:
                     'fileSize': converted_item.get('fileSize'),
                     'uploadedAt': converted_item.get('uploadedAt'),
                     'summary': converted_item.get('summary'),
-                    'downloadUrl': download_url
+                    'downloadUrl': download_url,
+                    'url': converted_item.get('url'),
+                    'originalTitle': converted_item.get('originalTitle')
                 }
             })
         }

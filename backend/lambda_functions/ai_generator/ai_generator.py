@@ -6,6 +6,9 @@ from datetime import datetime
 from typing import Dict, Any, List
 import requests
 from botocore.exceptions import ClientError
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse, urljoin
+import re
 
 # 共通ライブラリをインポート
 from common.dynamodb import DynamoDBClient
@@ -88,6 +91,133 @@ def extract_text_from_pdf(pdf_content: bytes) -> str:
     except Exception as e:
         print(f"PDF抽出エラー: {str(e)}")
         return ""
+
+def validate_url(url: str) -> bool:
+    """URLの妥当性をチェック"""
+    try:
+        result = urlparse(url)
+        return all([result.scheme, result.netloc]) and result.scheme in ['http', 'https']
+    except Exception:
+        return False
+
+def fetch_url_content(url: str) -> Dict[str, Any]:
+    """URLからコンテンツを取得してテキストを抽出"""
+    try:
+        # URLの妥当性チェック
+        if not validate_url(url):
+            return {
+                'success': False,
+                'error': 'Invalid URL format'
+            }
+        
+        # リクエストヘッダーを設定（User-Agentを追加してブロックを回避）
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'ja,en-US;q=0.7,en;q=0.3',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+        }
+        
+        # タイムアウトを設定（30秒）
+        response = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
+        response.raise_for_status()
+        
+        # コンテンツタイプをチェック
+        content_type = response.headers.get('content-type', '').lower()
+        if 'text/html' not in content_type:
+            return {
+                'success': False,
+                'error': f'Unsupported content type: {content_type}'
+            }
+        
+        # HTMLをパース（html.parserを使用）
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # 不要なタグを削除
+        for tag in soup(['script', 'style', 'nav', 'footer', 'header', 'aside', 'noscript']):
+            tag.decompose()
+        
+        # メインコンテンツを抽出
+        content_text = ""
+        
+        # タイトルを取得
+        title = soup.find('title')
+        if title:
+            content_text += f"タイトル: {title.get_text().strip()}\n\n"
+        
+        # h1タグを取得
+        h1_tags = soup.find_all('h1')
+        if h1_tags:
+            content_text += "見出し1:\n"
+            for h1 in h1_tags:
+                content_text += f"- {h1.get_text().strip()}\n"
+            content_text += "\n"
+        
+        # h2-h6タグを取得
+        for level in range(2, 7):
+            h_tags = soup.find_all(f'h{level}')
+            if h_tags:
+                content_text += f"見出し{level}:\n"
+                for h in h_tags:
+                    content_text += f"- {h.get_text().strip()}\n"
+                content_text += "\n"
+        
+        # 段落テキストを取得
+        paragraphs = soup.find_all(['p', 'article', 'section', 'div'])
+        paragraph_text = ""
+        for p in paragraphs:
+            text = p.get_text().strip()
+            if text and len(text) > 20:  # 短すぎるテキストは除外
+                paragraph_text += text + "\n\n"
+        
+        content_text += paragraph_text
+        
+        # テキストをクリーンアップ
+        content_text = re.sub(r'\n\s*\n', '\n\n', content_text)  # 複数の改行を2つに統一
+        content_text = re.sub(r'[ \t]+', ' ', content_text)  # 複数のスペースを1つに統一
+        content_text = content_text.strip()
+        
+        # テキストが短すぎる場合はエラー
+        if len(content_text) < 100:
+            return {
+                'success': False,
+                'error': 'Content too short or no meaningful text found'
+            }
+        
+        # 長すぎる場合は切り詰め（8000文字まで）
+        if len(content_text) > 8000:
+            content_text = content_text[:8000] + "..."
+        
+        return {
+            'success': True,
+            'content': content_text,
+            'url': url,
+            'title': title.get_text().strip() if title else 'No title',
+            'content_length': len(content_text)
+        }
+        
+    except requests.exceptions.Timeout:
+        return {
+            'success': False,
+            'error': 'Request timeout - URL took too long to respond'
+        }
+    except requests.exceptions.ConnectionError:
+        return {
+            'success': False,
+            'error': 'Connection error - Could not connect to URL'
+        }
+    except requests.exceptions.HTTPError as e:
+        return {
+            'success': False,
+            'error': f'HTTP error: {e.response.status_code}'
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'error': f'Failed to fetch URL content: {str(e)}'
+        }
 
 def generate_faqs_with_openai(content: str, user_id: str) -> List[Dict[str, Any]]:
     """OpenAI APIを使用してFAQを生成"""
@@ -255,9 +385,25 @@ def lambda_handler(event, context):
         
         content_type = body.get('contentType', 'text')
         content = body.get('content', '')
+        url = body.get('url', '')
+        
+        # URLが指定されている場合は、URLからコンテンツを取得
+        if url:
+            print(f"🌐 URLからコンテンツを取得: {url}")
+            url_result = fetch_url_content(url)
+            
+            if not url_result['success']:
+                return create_response(400, {
+                    'error': f'Failed to fetch URL content: {url_result["error"]}'
+                })
+            
+            content = url_result['content']
+            content_type = 'url'
+            print(f"✅ URLコンテンツ取得成功: {url_result['content_length']} characters")
+            print(f"📄 タイトル: {url_result['title']}")
         
         if not content:
-            return create_response(400, {'error': 'Content is required'})
+            return create_response(400, {'error': 'Content or URL is required'})
         
         print(f"📝 コンテンツタイプ: {content_type}")
         print(f"📝 コンテンツ長: {len(content)} characters")

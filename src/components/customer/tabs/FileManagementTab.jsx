@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, FileText, Music, Trash2, Download, Eye, Plus, X, Mic, Square, Play, MessageCircle } from 'lucide-react';
+import { Upload, FileText, Music, Trash2, Download, Eye, Plus, X, Mic, Square, Play, MessageCircle, ExternalLink } from 'lucide-react';
 import { awsApiClient } from '../../../utils/awsApiClient';
 import FileQuestionTab from './FileQuestionTab';
 
@@ -14,7 +14,9 @@ const FileManagementTab = ({ customerId, currentUser }) => {
   const [dragActive, setDragActive] = useState(false);
   const [uploadForm, setUploadForm] = useState({
     fileType: 'pdf',
-    fileContent: null
+    fileContent: null,
+    url: '',
+    uploadType: 'file' // 'file' or 'url'
   });
   const [isRecording, setIsRecording] = useState(false);
   const [recordedAudio, setRecordedAudio] = useState(null);
@@ -46,7 +48,7 @@ const FileManagementTab = ({ customerId, currentUser }) => {
   const fetchFiles = async () => {
     try {
       setLoading(true);
-      const response = await awsApiClient.request(`/files?customerId=${customerId}`, 'GET');
+      const response = await awsApiClient.getFiles(customerId);
       
       if (response.success) {
         // 重複を除去（fileIdでユニークにする）
@@ -63,6 +65,14 @@ const FileManagementTab = ({ customerId, currentUser }) => {
   };
 
   const handleFileUpload = async () => {
+    if (uploadForm.uploadType === 'url') {
+      await handleUrlUpload();
+    } else {
+      await handleFileUploadInternal();
+    }
+  };
+
+  const handleFileUploadInternal = async () => {
     if (!uploadForm.fileContent) {
       alert('ファイルを選択してください');
       return;
@@ -84,7 +94,7 @@ const FileManagementTab = ({ customerId, currentUser }) => {
           fileMimeType: uploadForm.fileContent.type
         });
         
-        const response = await awsApiClient.request('/files/upload', 'POST', {
+        const response = await awsApiClient.uploadFile({
           customerId,
           fileName: uploadForm.fileContent.name,
           fileType: uploadForm.fileType,
@@ -95,7 +105,7 @@ const FileManagementTab = ({ customerId, currentUser }) => {
         if (response.success) {
           alert('ファイルが正常にアップロードされました');
           setShowUploadModal(false);
-          setUploadForm({ fileType: 'pdf', fileContent: null });
+          setUploadForm({ fileType: 'pdf', fileContent: null, url: '', uploadType: 'file' });
           resetRecording();
           fetchFiles(); // 一覧を更新
         } else {
@@ -112,11 +122,48 @@ const FileManagementTab = ({ customerId, currentUser }) => {
     }
   };
 
+  const handleUrlUpload = async () => {
+    if (!uploadForm.url.trim()) {
+      alert('URLを入力してください');
+      return;
+    }
+
+    try {
+      setUploading(true);
+      
+      console.log('URLアップロード情報:', {
+        customerId,
+        url: uploadForm.url,
+        userId: currentUser?.userId || 'unknown'
+      });
+      
+      const response = await awsApiClient.uploadUrl({
+        customerId,
+        url: uploadForm.url,
+        userId: currentUser?.userId || 'unknown'
+      });
+
+      if (response.success) {
+        alert('URLの内容が正常にアップロードされました');
+        setShowUploadModal(false);
+        setUploadForm({ fileType: 'pdf', fileContent: null, url: '', uploadType: 'file' });
+        fetchFiles(); // 一覧を更新
+      } else {
+        alert('URLアップロードに失敗しました: ' + (response.error || '不明なエラー'));
+      }
+    } catch (error) {
+      console.error('URLアップロードエラー:', error);
+      alert('URLアップロードに失敗しました');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleFileDelete = async (fileId) => {
     if (!confirm('このファイルを削除しますか？')) return;
 
     try {
-      const response = await awsApiClient.request(`/files/${fileId}`, 'DELETE');
+      const response = await awsApiClient.deleteFile(fileId);
 
       if (response.success) {
         alert('ファイルが削除されました');
@@ -133,7 +180,7 @@ const FileManagementTab = ({ customerId, currentUser }) => {
   const handleFileDetail = async (fileId) => {
     try {
       console.log('ファイル詳細取得開始:', { fileId, customerId });
-      const response = await awsApiClient.request(`/files/${fileId}?customerId=${customerId}`, 'GET');
+      const response = await awsApiClient.getFileDetail(fileId, customerId);
       console.log('ファイル詳細取得レスポンス:', response);
 
       if (response.success) {
@@ -152,7 +199,7 @@ const FileManagementTab = ({ customerId, currentUser }) => {
     if (selectedFile && selectedFile.fileId) {
       try {
         console.log('ファイル詳細を再取得中:', selectedFile.fileId);
-        const response = await awsApiClient.request(`/files/${selectedFile.fileId}?customerId=${customerId}`, 'GET');
+        const response = await awsApiClient.getFileDetail(selectedFile.fileId, customerId);
         
         if (response.success) {
           setSelectedFile(response.file);
@@ -322,7 +369,7 @@ const FileManagementTab = ({ customerId, currentUser }) => {
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
         >
           <Plus className="w-4 h-4" />
-          ファイルアップロード
+          ファイル・URLアップロード
         </button>
       </div>
 
@@ -394,7 +441,7 @@ const FileManagementTab = ({ customerId, currentUser }) => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold">ファイルアップロード</h3>
+              <h3 className="text-lg font-semibold">ファイル・URLアップロード</h3>
               <button
                 onClick={() => setShowUploadModal(false)}
                 className="text-gray-400 hover:text-gray-600"
@@ -404,23 +451,59 @@ const FileManagementTab = ({ customerId, currentUser }) => {
             </div>
 
             <div className="space-y-4">
-              {/* ファイルタイプ選択 */}
+              {/* アップロードタイプ選択 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  ファイルタイプ
+                  アップロードタイプ
                 </label>
                 <select
-                  value={uploadForm.fileType}
-                  onChange={(e) => setUploadForm(prev => ({ ...prev, fileType: e.target.value }))}
+                  value={uploadForm.uploadType}
+                  onChange={(e) => setUploadForm(prev => ({ ...prev, uploadType: e.target.value }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2"
                 >
-                  <option value="pdf">PDF</option>
-                  <option value="audio">音声ファイル</option>
+                  <option value="file">ファイル</option>
+                  <option value="url">URL</option>
                 </select>
               </div>
 
+              {/* URL入力エリア */}
+              {uploadForm.uploadType === 'url' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    URL
+                  </label>
+                  <input
+                    type="url"
+                    value={uploadForm.url}
+                    onChange={(e) => setUploadForm(prev => ({ ...prev, url: e.target.value }))}
+                    placeholder="https://example.com/page"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  />
+                  <p className="text-sm text-gray-500 mt-1">
+                    ウェブページのURLを入力してください。内容を要約して質問できるようになります。
+                  </p>
+                </div>
+              )}
+
+              {/* ファイルタイプ選択（ファイルアップロード時のみ） */}
+              {uploadForm.uploadType === 'file' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    ファイルタイプ
+                  </label>
+                  <select
+                    value={uploadForm.fileType}
+                    onChange={(e) => setUploadForm(prev => ({ ...prev, fileType: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                  >
+                    <option value="pdf">PDF</option>
+                    <option value="audio">音声ファイル</option>
+                  </select>
+                </div>
+              )}
+
               {/* 音声録音エリア */}
-              {uploadForm.fileType === 'audio' && (
+              {uploadForm.uploadType === 'file' && uploadForm.fileType === 'audio' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     音声録音
@@ -490,6 +573,7 @@ const FileManagementTab = ({ customerId, currentUser }) => {
               )}
 
               {/* ファイルアップロードエリア */}
+              {uploadForm.uploadType === 'file' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   ファイル選択
@@ -535,12 +619,14 @@ const FileManagementTab = ({ customerId, currentUser }) => {
                   )}
                 </div>
               </div>
+              )}
 
               {/* アップロードボタン */}
               <div className="flex gap-3">
                 <button
                   onClick={() => {
                     setShowUploadModal(false);
+                    setUploadForm({ fileType: 'pdf', fileContent: null, url: '', uploadType: 'file' });
                     resetRecording();
                   }}
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
@@ -549,7 +635,7 @@ const FileManagementTab = ({ customerId, currentUser }) => {
                 </button>
                 <button
                   onClick={handleFileUpload}
-                  disabled={uploading || !uploadForm.fileContent}
+                  disabled={uploading || (uploadForm.uploadType === 'file' && !uploadForm.fileContent) || (uploadForm.uploadType === 'url' && !uploadForm.url.trim())}
                   className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {uploading ? 'アップロード中...' : 'アップロード'}
@@ -615,6 +701,27 @@ const FileManagementTab = ({ customerId, currentUser }) => {
               {activeDetailTab === 'summary' && (
                 <div className="p-6 overflow-y-auto h-full">
                   <div className="space-y-4">
+                    {selectedFile.fileType === 'url' && selectedFile.url && (
+                      <div className="mb-4">
+                        <h5 className="font-medium text-gray-900 mb-2">元のURL</h5>
+                        <div className="bg-blue-50 rounded-lg p-4">
+                          <a 
+                            href={selectedFile.url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 underline break-all"
+                          >
+                            {selectedFile.url}
+                          </a>
+                          {selectedFile.originalTitle && (
+                            <p className="text-sm text-gray-600 mt-2">
+                              タイトル: {selectedFile.originalTitle}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
                     {selectedFile.summary ? (
                       <div>
                         <h5 className="font-medium text-gray-900 mb-2">AI要約</h5>
@@ -630,17 +737,29 @@ const FileManagementTab = ({ customerId, currentUser }) => {
                     )}
 
                     <div className="flex gap-3 pt-4 border-t">
-                      <button
-                        onClick={() => {
-                          if (selectedFile.downloadUrl) {
-                            window.open(selectedFile.downloadUrl, '_blank');
-                          }
-                        }}
-                        className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2"
-                      >
-                        <Download className="w-4 h-4" />
-                        ダウンロード
-                      </button>
+                      {selectedFile.fileType === 'url' && selectedFile.url ? (
+                        <button
+                          onClick={() => {
+                            window.open(selectedFile.url, '_blank');
+                          }}
+                          className="flex-1 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center justify-center gap-2"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                          URLを開く
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            if (selectedFile.downloadUrl) {
+                              window.open(selectedFile.downloadUrl, '_blank');
+                            }
+                          }}
+                          className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2"
+                        >
+                          <Download className="w-4 h-4" />
+                          ダウンロード
+                        </button>
+                      )}
                       <button
                         onClick={() => setShowFileDetail(false)}
                         className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"

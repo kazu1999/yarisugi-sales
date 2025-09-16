@@ -173,6 +173,11 @@ const YarisugiDashboard = () => {
   const [aiUploadedFile, setAiUploadedFile] = useState(null);
   const [aiFileContent, setAiFileContent] = useState('');
   const [aiFileProcessing, setAiFileProcessing] = useState(false);
+  
+  // AI URL入力用の状態
+  const [aiUrlInput, setAiUrlInput] = useState('');
+  const [aiUrlProcessing, setAiUrlProcessing] = useState(false);
+  const [aiUrlError, setAiUrlError] = useState('');
 
   // AIファイルアップロード処理関数
   const handleAiFileUpload = async (event) => {
@@ -1659,14 +1664,14 @@ const YarisugiDashboard = () => {
                         <MessageSquare className="w-4 h-4" />
                         FAQチャット
                       </Button>
-                  </div>
-                  
+                        </div>
+
                     {/* カテゴリフィルター */}
                     {showFaqFilters && (
                       <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                         <div className="flex flex-wrap gap-2">
                           {categories.map(category => (
-                    <button 
+                            <button
                               key={category.value}
                               onClick={() => setSelectedCategory(category.value)}
                               className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
@@ -1676,13 +1681,13 @@ const YarisugiDashboard = () => {
                               }`}
                             >
                               {category.label} ({categoryCounts[category.value] || 0})
-                    </button>
+                            </button>
                           ))}
-                  </div>
-                </div>
+                          </div>
+                        </div>
                     )}
-              </div>
-            </div>
+                      </div>
+                    </div>
 
                 {/* 検索結果サマリー */}
                 <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
@@ -1698,9 +1703,9 @@ const YarisugiDashboard = () => {
                       ) : (
                         <span>全FAQ: <span className="font-semibold">{faqs.length}</span>件</span>
                       )}
-                    </div>
+                        </div>
                     {(faqSearchQuery || selectedCategory !== 'all') && (
-                    <button 
+                        <button
                         onClick={() => {
                           setFaqSearchQuery('');
                           setSelectedCategory('all');
@@ -1709,12 +1714,12 @@ const YarisugiDashboard = () => {
                       >
                         <X className="w-3 h-3" />
                         フィルターをクリア
-                    </button>
+                        </button>
                     )}
-                  </div>
-                </div>
-                
-                {/* FAQ一覧 */}
+                        </div>
+                      </div>
+
+                      {/* FAQ一覧 */}
                 <div className="p-6">
                   {faqsLoading ? (
                     <div className="p-8 text-center">
@@ -1772,17 +1777,17 @@ const YarisugiDashboard = () => {
                                         +{faq.tags.length - 3}
                                       </span>
                                     )}
-                      </div>
+                                  </div>
                                 )}
-                        </div>
+                                    </div>
                               <h3 className="font-semibold mb-2 text-gray-900">Q: {faq.question}</h3>
                               <p className="text-gray-700 mb-3">A: {faq.answer}</p>
                               <div className="flex items-center gap-4 text-sm text-gray-500">
                                 <span>作成日: {faq.createdAt ? new Date(faq.createdAt).toLocaleDateString('ja-JP') : '-'}</span>
                                 {faq.updatedAt && (
                                   <span>更新日: {new Date(faq.updatedAt).toLocaleDateString('ja-JP')}</span>
-                                )}
-                          </div>
+                                  )}
+                                </div>
                         </div>
                             <div className="flex gap-2 ml-4">
                               <Button 
@@ -3450,6 +3455,10 @@ ${selectedProcess.name}の件でご連絡させていただきました。
                         setAiUploadedFile(null);
                         setAiFileContent('');
                         setAiFileProcessing(false);
+                        // AI URL関連の状態をリセット
+                        setAiUrlInput('');
+                        setAiUrlProcessing(false);
+                        setAiUrlError('');
                       }}
                       className="text-gray-500 hover:text-gray-700 text-2xl"
                     >
@@ -3527,6 +3536,69 @@ ${selectedProcess.name}の件でご連絡させていただきました。
                         </div>
                       </div>
 
+                      {/* URL入力 */}
+                      <div className="bg-white p-8 rounded-lg shadow-lg border-2 border-dashed border-purple-300 hover:border-purple-500 transition-colors mb-6">
+                        <div className="text-center">
+                          <div className="text-6xl mb-4">🌐</div>
+                          <h2 className="text-xl font-bold mb-2">URLから取得</h2>
+                          <p className="text-gray-600 mb-4">ウェブページのURLを入力してFAQを生成</p>
+                          <div className="w-full">
+                            <input
+                              type="url"
+                              value={aiUrlInput}
+                              onChange={(e) => setAiUrlInput(e.target.value)}
+                              placeholder="https://example.com/page"
+                              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 mb-4"
+                            />
+                            {aiUrlInput && (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    console.log("🌐 URLからコンテンツ取得開始:", aiUrlInput);
+                                    setAiUrlProcessing(true);
+                                    setAiUrlError('');
+                                    
+                                    const response = await awsApiClient.generateFaqs({
+                                      url: aiUrlInput,
+                                      saveToDb: false
+                                    });
+                                    
+                                    if (response.faqs && response.faqs.length > 0) {
+                                      console.log("✅ URLコンテンツ取得成功");
+                                      setAiGeneratedFaqs(response.faqs);
+                                    } else {
+                                      console.error("❌ URLコンテンツ取得失敗:", response.error || response.message);
+                                      setAiUrlError(response.error || response.message || 'URLからコンテンツを取得できませんでした');
+                                    }
+                                  } catch (err) {
+                                    console.error('URL取得エラー:', err);
+                                    setAiUrlError('URLからコンテンツを取得中にエラーが発生しました');
+                                  } finally {
+                                    setAiUrlProcessing(false);
+                                  }
+                                }}
+                                disabled={aiUrlProcessing}
+                                className="bg-purple-500 text-white px-6 py-2 rounded-lg hover:bg-purple-600 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {aiUrlProcessing ? (
+                                  <>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2 inline-block"></div>
+                                    取得中...
+                                  </>
+                                ) : (
+                                  '🌐 URLからFAQを生成'
+                                )}
+                              </button>
+                            )}
+                            {aiUrlError && (
+                              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                                <p className="text-red-600 text-sm">❌ {aiUrlError}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
                       {/* テキスト入力 */}
                       <div className="bg-white p-8 rounded-lg shadow-lg border-2 border-dashed border-green-300 hover:border-green-500 transition-colors">
                         <div className="text-center">
@@ -3578,6 +3650,10 @@ ${selectedProcess.name}の件でご連絡させていただきました。
                               setAiUploadedFile(null);
                               setAiFileContent('');
                               setAiFileProcessing(false);
+                              // AI URL関連の状態をリセット
+                              setAiUrlInput('');
+                              setAiUrlProcessing(false);
+                              setAiUrlError('');
                             }}
                             className="text-gray-500 hover:text-gray-700 px-4 py-2 border rounded-lg"
                           >
