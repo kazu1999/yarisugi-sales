@@ -1658,12 +1658,12 @@ resource "aws_lambda_function" "company_profile" {
 
 # 顧客レポート生成Lambda関数
 resource "aws_lambda_function" "customer_report" {
-  filename         = "../lambda_functions/customer_report_lambda.zip"
+  filename         = "../lambda_functions/customer_report/customer_report_lambda.zip"
   function_name    = "${var.project_name}-customer-report-${var.environment}"
   role            = aws_iam_role.ai_lambda_role.arn
   handler         = "customer_report.lambda_handler"
   runtime         = "python3.11"
-  timeout         = 30
+  timeout         = 60
   memory_size     = 256
   source_code_hash = filebase64sha256("../lambda_functions/customer_report/customer_report_lambda.zip")
 

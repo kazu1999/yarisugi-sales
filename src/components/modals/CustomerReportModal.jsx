@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { X, Download, FileText, Sparkles, Loader2 } from 'lucide-react';
+import { X, Download, FileText, Sparkles, Loader2, BarChart3, Users, DollarSign, Target } from 'lucide-react';
 import { awsApiClient } from '../../utils/awsApiClient';
 
 const CustomerReportModal = ({ isOpen, onClose, customerData, companyProfile }) => {
   const [report, setReport] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('summary');
 
   useEffect(() => {
     if (isOpen && customerData && !report) {
@@ -45,6 +46,15 @@ ${customerData.companyName}
 
 【顧客についてのまとめ】
 ${report.customerSummary}
+
+【SWOT分析】
+${report.swotAnalysis || 'SWOT分析データがありません'}
+
+【ペルソナ分析】
+${report.personaAnalysis || 'ペルソナ分析データがありません'}
+
+【予算感の推定】
+${report.budgetEstimation || '予算感推定データがありません'}
 
 【営業提案】
 ${report.salesProposal}
@@ -95,7 +105,13 @@ ${report.recommendedApproach}
             <div className="flex flex-col items-center justify-center py-12">
               <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
               <p className="text-lg font-medium text-gray-900 mb-2">AIがレポートを生成中...</p>
-              <p className="text-sm text-gray-600">ChatGPTを使用して、顧客の分析と営業提案を作成しています</p>
+              <p className="text-sm text-gray-600">ChatGPTとWeb検索を使用して、最新情報を含む包括的な顧客分析と営業提案を作成しています</p>
+              <div className="mt-4 text-xs text-gray-500">
+                <p>• 顧客会社の基本情報を検索中</p>
+                <p>• 最新ニュースと業界動向を調査中</p>
+                <p>• 競合他社の情報を収集中</p>
+                <p>• AI分析とレポート生成中</p>
+              </div>
             </div>
           ) : error ? (
             <div className="text-center py-12">
@@ -107,34 +123,112 @@ ${report.recommendedApproach}
             </div>
           ) : report ? (
             <div className="space-y-6">
-              <div className="bg-blue-50 rounded-lg p-6">
-                <div className="flex items-center mb-4">
-                  <Sparkles className="w-5 h-5 text-blue-600 mr-2" />
-                  <h3 className="text-lg font-semibold text-blue-900">顧客についてのまとめ</h3>
-                </div>
-                <p className="text-gray-700 whitespace-pre-wrap">{report.customerSummary}</p>
+              {/* タブナビゲーション */}
+              <div className="border-b border-gray-200">
+                <nav className="-mb-px flex space-x-8">
+                  {[
+                    { id: 'summary', label: '概要', icon: FileText, color: 'blue' },
+                    { id: 'swot', label: 'SWOT分析', icon: BarChart3, color: 'orange' },
+                    { id: 'persona', label: 'ペルソナ', icon: Users, color: 'green' },
+                    { id: 'budget', label: '予算感', icon: DollarSign, color: 'purple' },
+                    { id: 'proposal', label: '営業提案', icon: Target, color: 'red' },
+                    { id: 'approach', label: 'アプローチ', icon: Sparkles, color: 'indigo' }
+                  ].map((tab) => {
+                    const Icon = tab.icon;
+                    const isActive = activeTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`flex items-center py-2 px-1 border-b-2 font-medium text-sm ${
+                          isActive
+                            ? `border-${tab.color}-500 text-${tab.color}-600`
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4 mr-2" />
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </nav>
               </div>
 
-              <div className="bg-green-50 rounded-lg p-6">
-                <div className="flex items-center mb-4">
-                  <FileText className="w-5 h-5 text-green-600 mr-2" />
-                  <h3 className="text-lg font-semibold text-green-900">営業提案</h3>
-                </div>
-                <p className="text-gray-700 whitespace-pre-wrap">{report.salesProposal}</p>
+              {/* タブコンテンツ */}
+              <div className="min-h-[400px]">
+                {activeTab === 'summary' && (
+                  <div className="bg-blue-50 rounded-lg p-6">
+                    <div className="flex items-center mb-4">
+                      <FileText className="w-5 h-5 text-blue-600 mr-2" />
+                      <h3 className="text-lg font-semibold text-blue-900">顧客についてのまとめ</h3>
+                    </div>
+                    <p className="text-gray-700 whitespace-pre-wrap">{report.customerSummary}</p>
+                  </div>
+                )}
+
+                {activeTab === 'swot' && (
+                  <div className="bg-orange-50 rounded-lg p-6">
+                    <div className="flex items-center mb-4">
+                      <BarChart3 className="w-5 h-5 text-orange-600 mr-2" />
+                      <h3 className="text-lg font-semibold text-orange-900">SWOT分析</h3>
+                    </div>
+                    <p className="text-gray-700 whitespace-pre-wrap">{report.swotAnalysis || 'SWOT分析データがありません'}</p>
+                  </div>
+                )}
+
+                {activeTab === 'persona' && (
+                  <div className="bg-green-50 rounded-lg p-6">
+                    <div className="flex items-center mb-4">
+                      <Users className="w-5 h-5 text-green-600 mr-2" />
+                      <h3 className="text-lg font-semibold text-green-900">ペルソナ分析</h3>
+                    </div>
+                    <p className="text-gray-700 whitespace-pre-wrap">{report.personaAnalysis || 'ペルソナ分析データがありません'}</p>
+                  </div>
+                )}
+
+                {activeTab === 'budget' && (
+                  <div className="bg-purple-50 rounded-lg p-6">
+                    <div className="flex items-center mb-4">
+                      <DollarSign className="w-5 h-5 text-purple-600 mr-2" />
+                      <h3 className="text-lg font-semibold text-purple-900">予算感の推定</h3>
+                    </div>
+                    <p className="text-gray-700 whitespace-pre-wrap">{report.budgetEstimation || '予算感推定データがありません'}</p>
+                  </div>
+                )}
+
+                {activeTab === 'proposal' && (
+                  <div className="bg-red-50 rounded-lg p-6">
+                    <div className="flex items-center mb-4">
+                      <Target className="w-5 h-5 text-red-600 mr-2" />
+                      <h3 className="text-lg font-semibold text-red-900">営業提案</h3>
+                    </div>
+                    <p className="text-gray-700 whitespace-pre-wrap">{report.salesProposal}</p>
+                  </div>
+                )}
+
+                {activeTab === 'approach' && (
+                  <div className="bg-indigo-50 rounded-lg p-6">
+                    <div className="flex items-center mb-4">
+                      <Sparkles className="w-5 h-5 text-indigo-600 mr-2" />
+                      <h3 className="text-lg font-semibold text-indigo-900">推奨アプローチ</h3>
+                    </div>
+                    <p className="text-gray-700 whitespace-pre-wrap">{report.recommendedApproach}</p>
+                  </div>
+                )}
               </div>
 
-              <div className="bg-purple-50 rounded-lg p-6">
-                <div className="flex items-center mb-4">
-                  <Sparkles className="w-5 h-5 text-purple-600 mr-2" />
-                  <h3 className="text-lg font-semibold text-purple-900">推奨アプローチ</h3>
-                </div>
-                <p className="text-gray-700 whitespace-pre-wrap">{report.recommendedApproach}</p>
-              </div>
-
+              {/* フッター情報 */}
               <div className="bg-gray-50 rounded-lg p-4">
                 <div className="flex items-center justify-between text-sm text-gray-600">
                   <span>生成日時: {new Date().toLocaleString('ja-JP')}</span>
-                  <span>AI: ChatGPT</span>
+                  <div className="flex items-center space-x-4">
+                    <span>AI: ChatGPT</span>
+                    {report.webSearchEnabled && (
+                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-xs">
+                        Web検索対応
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

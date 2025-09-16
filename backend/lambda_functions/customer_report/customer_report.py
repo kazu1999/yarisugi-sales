@@ -6,9 +6,71 @@ from datetime import datetime
 from botocore.exceptions import ClientError
 from bs4 import BeautifulSoup
 import re
+import time
 
 # OpenAI設定
 secrets_client = boto3.client('secretsmanager')
+
+def extract_response_content(response):
+    """
+    Responses APIの応答からコンテンツを抽出
+    
+    Args:
+        response (Dict[str, Any]): API応答
+    
+    Returns:
+        str: 抽出されたコンテンツ
+    """
+    print(f"🔍 Extracting content from response structure: {list(response.keys())}")
+    
+    # Responses APIの実際の構造に基づいて抽出
+    if 'output' in response and isinstance(response['output'], list):
+        print(f"📋 Found output array with {len(response['output'])} items")
+        # output配列内のすべてのアイテムをチェック
+        for i, output_item in enumerate(response['output']):
+            print(f"📝 Output item {i}: {output_item}")
+            # messageタイプのアイテムを探す
+            if output_item.get('type') == 'message' and 'content' in output_item:
+                if isinstance(output_item['content'], list) and len(output_item['content']) > 0:
+                    content_item = output_item['content'][0]
+                    print(f"📄 Content item: {content_item}")
+                    
+                    if 'text' in content_item:
+                        print(f"✅ Found text content: {content_item['text'][:100]}...")
+                        return content_item['text']
+    
+    # フォールバック: 従来のChat Completions API形式
+    if 'choices' in response and len(response['choices']) > 0:
+        print("🔄 Trying Chat Completions API format")
+        choice = response['choices'][0]
+        # 形式1: message.content
+        if 'message' in choice and 'content' in choice['message']:
+            print("✅ Found message.content format")
+            return choice['message']['content']
+        # 形式2: 直接content
+        elif 'content' in choice:
+            print("✅ Found direct content format")
+            return choice['content']
+        # 形式3: text
+        elif 'text' in choice:
+            print("✅ Found text format")
+            return choice['text']
+    
+    # その他の形式
+    if 'content' in response:
+        print("✅ Found top-level content")
+        return response['content']
+    
+    if 'text' in response:
+        print("✅ Found top-level text")
+        return response['text']
+    
+    if 'output' in response:
+        print("✅ Found top-level output")
+        return str(response['output'])
+    
+    print("❌ No content found in response")
+    return ''
 
 def get_openai_api_key():
     """OpenAI APIキーを取得"""
@@ -76,8 +138,9 @@ def fetch_website_content(site_url):
         print(f"❌ Failed to fetch website content: {str(e)}")
         return f"Webサイト情報: サイトの取得に失敗しました ({str(e)})"
 
+
 def generate_customer_report(customer_data, company_profile):
-    """ChatGPTを使用して顧客レポートを生成"""
+    """ChatGPT Responses APIとWeb検索を使用して顧客レポートを生成"""
     try:
         api_key = get_openai_api_key()
         
@@ -104,6 +167,7 @@ def generate_customer_report(customer_data, company_profile):
         # Webサイトの内容を取得
         website_content = fetch_website_content(customer_data.get('siteUrl', ''))
         
+        
         # 自社情報の整形
         company_info = f"""
 自社情報:
@@ -124,30 +188,52 @@ def generate_customer_report(customer_data, company_profile):
    予算: {proposal.get('estimatedCost', 'N/A')}
             """
         
+        # Responses APIを使用してレポート生成
         data = {
             'model': 'gpt-4o-mini',
-            'messages': [
-                {
-                    'role': 'system',
-                    'content': """あなたは営業コンサルタントです。顧客情報、Webサイトの内容、自社情報を分析して、以下の3つのセクションでレポートを作成してください：
+            'input': f"""あなたは営業コンサルタントです。顧客情報、Webサイトの内容、自社情報を総合的に分析して、以下の6つのセクションでレポートを作成してください。
+
+Web検索ツールを使用して、顧客会社の最新情報、業界動向、競合状況などの最新情報を取得し、それらを踏まえた包括的なレポートを作成してください。
 
 1. 顧客についてのまとめ（200-300文字）
    - 顧客の特徴、業界での位置づけ、潜在的なニーズを分析
-   - Webサイトの内容から読み取れる事業内容や特徴も含める
+   - Webサイトの内容とWeb検索で取得した最新情報から読み取れる事業内容や特徴も含める
+   - 最新のニュースや業界動向も考慮する
 
-2. 営業提案（300-400文字）
+2. SWOT分析
+   - **強み（Strengths）**: 顧客企業の優位性、競争力、リソース
+   - **弱み（Weaknesses）**: 改善が必要な領域、リスク要因
+   - **機会（Opportunities）**: 市場機会、成長可能性、外部要因
+   - **脅威（Threats）**: 競合、市場変化、外部リスク
+   - 各項目について具体的で実用的な分析を提供
+
+3. ペルソナ分析
+   - **意思決定者の特徴**: 年齢層、役職、関心事項、意思決定スタイル
+   - **影響力のある人物**: 技術責任者、経営陣、現場担当者などの特徴
+   - **コミュニケーション傾向**: 好む連絡方法、会議スタイル、情報の受け取り方
+   - **価値観と優先順位**: コスト重視、品質重視、革新性重視など
+   - 各項目について具体的で実用的な分析を提供
+
+4. 予算感の推定
+   - **予算規模の推定**: 会社規模、業界、過去の投資実績から推定される予算範囲
+   - **投資優先度**: どの分野に投資する可能性が高いか
+   - **意思決定プロセス**: 予算承認の流れ、承認権限者、期間
+   - **価格感度**: コスト重視度、ROI重視度、品質重視度
+   - 各項目について具体的で実用的な分析を提供
+
+5. 営業提案（300-400文字）
    - 自社のサービス・提案内容を踏まえて、この顧客に対する具体的な営業提案を作成
-   - Webサイトから読み取れる顧客の課題やニーズを踏まえた提案
+   - Webサイトの内容とWeb検索で取得した最新情報から読み取れる顧客の課題やニーズを踏まえた提案
+   - 業界動向や競合状況も考慮した差別化された提案
 
-3. 推奨アプローチ（200-300文字）
+6. 推奨アプローチ（200-300文字）
    - 効果的な営業アプローチの方法、タイミング、注意点を提案
-   - Webサイトの内容から読み取れる顧客の特徴を考慮したアプローチ
+   - Webサイトの内容とWeb検索で取得した最新情報から読み取れる顧客の特徴を考慮したアプローチ
+   - 最新の業界動向や競合状況を踏まえた戦略的アプローチ
 
-回答は日本語で、実用的で具体的な内容にしてください。"""
-                },
-                {
-                    'role': 'user',
-                    'content': f"""以下の情報を基にレポートを作成してください：
+回答は日本語で、実用的で具体的な内容にしてください。Web検索で取得した最新情報を積極的に活用してください。
+
+以下の情報を基にレポートを作成してください：
 
 {customer_info}
 
@@ -157,45 +243,86 @@ def generate_customer_report(customer_data, company_profile):
 
 {proposals_info}
 
-上記の情報を分析して、顧客のまとめ、営業提案、推奨アプローチを3つのセクションで回答してください。"""
-                }
+上記の情報を総合的に分析し、Web検索で最新情報を取得して、顧客のまとめ、SWOT分析、ペルソナ分析、予算感の推定、営業提案、推奨アプローチを6つのセクションで回答してください。""",
+            'tools': [
+                {"type": "web_search"}
             ],
-            'max_tokens': 1500,
+            'tool_choice': 'auto',
             'temperature': 0.7
         }
         
         response = requests.post(
-            'https://api.openai.com/v1/chat/completions',
+            'https://api.openai.com/v1/responses',
             headers=headers,
             json=data,
-            timeout=30
+            timeout=60
         )
         
         if response.status_code == 200:
             result = response.json()
-            content = result['choices'][0]['message']['content']
+            print(f"🔍 Raw API response: {result}")
+            content = extract_response_content(result)
+            print(f"📝 Extracted content: {content}")
             
             # レスポンスを3つのセクションに分割
-            sections = content.split('\n\n')
+            print(f"📋 Full content length: {len(content)}")
             
             customer_summary = ""
+            swot_analysis = ""
+            persona_analysis = ""
+            budget_estimation = ""
             sales_proposal = ""
             recommended_approach = ""
             
-            for section in sections:
-                if '顧客についてのまとめ' in section or 'まとめ' in section:
-                    customer_summary = section.replace('顧客についてのまとめ:', '').replace('まとめ:', '').strip()
-                elif '営業提案' in section:
-                    sales_proposal = section.replace('営業提案:', '').strip()
-                elif '推奨アプローチ' in section or 'アプローチ' in section:
-                    recommended_approach = section.replace('推奨アプローチ:', '').replace('アプローチ:', '').strip()
+            # セクションを正規表現で抽出
+            import re
+            
+            # 1. 顧客についてのまとめ
+            summary_match = re.search(r'\*\*1\.\s*顧客についてのまとめ\*\*(.*?)(?=\*\*2\.|$)', content, re.DOTALL)
+            if summary_match:
+                customer_summary = summary_match.group(1).strip()
+                print(f"✅ Found customer summary: {len(customer_summary)} chars")
+            
+            # 2. SWOT分析
+            swot_match = re.search(r'\*\*2\.\s*SWOT分析\*\*(.*?)(?=\*\*3\.|$)', content, re.DOTALL)
+            if swot_match:
+                swot_analysis = swot_match.group(1).strip()
+                print(f"✅ Found SWOT analysis: {len(swot_analysis)} chars")
+            
+            # 3. ペルソナ分析
+            persona_match = re.search(r'\*\*3\.\s*ペルソナ分析\*\*(.*?)(?=\*\*4\.|$)', content, re.DOTALL)
+            if persona_match:
+                persona_analysis = persona_match.group(1).strip()
+                print(f"✅ Found persona analysis: {len(persona_analysis)} chars")
+            
+            # 4. 予算感の推定
+            budget_match = re.search(r'\*\*4\.\s*予算感の推定\*\*(.*?)(?=\*\*5\.|$)', content, re.DOTALL)
+            if budget_match:
+                budget_estimation = budget_match.group(1).strip()
+                print(f"✅ Found budget estimation: {len(budget_estimation)} chars")
+            
+            # 5. 営業提案
+            proposal_match = re.search(r'\*\*5\.\s*営業提案\*\*(.*?)(?=\*\*6\.|$)', content, re.DOTALL)
+            if proposal_match:
+                sales_proposal = proposal_match.group(1).strip()
+                print(f"✅ Found sales proposal: {len(sales_proposal)} chars")
+            
+            # 6. 推奨アプローチ
+            approach_match = re.search(r'\*\*6\.\s*推奨アプローチ\*\*(.*?)(?=以上が|$)', content, re.DOTALL)
+            if approach_match:
+                recommended_approach = approach_match.group(1).strip()
+                print(f"✅ Found recommended approach: {len(recommended_approach)} chars")
             
             return {
                 'customerSummary': customer_summary or content,
+                'swotAnalysis': swot_analysis or content,
+                'personaAnalysis': persona_analysis or content,
+                'budgetEstimation': budget_estimation or content,
                 'salesProposal': sales_proposal or content,
                 'recommendedApproach': recommended_approach or content,
                 'generatedAt': datetime.now().isoformat(),
-                'modelUsed': data['model']
+                'modelUsed': data['model'],
+                'webSearchEnabled': True
             }
         else:
             print(f"OpenAI API error: {response.status_code}")
