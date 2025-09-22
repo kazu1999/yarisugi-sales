@@ -102,23 +102,53 @@ def get_sales_flow_statistics(user_id: str) -> Dict[str, Any]:
         print(f"📊 Total customers from customers table: {total_customers}")
         print(f"📋 Customer items: {all_customers}")
         
-        # 2. 営業フローデータを取得
-        sales_flows_response = sales_flows_table.query(
-            IndexName='UserIdIndex',
-            KeyConditionExpression='userId = :user_id',
-            ExpressionAttributeValues={
-                ':user_id': user_id
-            }
-        )
+        # 2. 営業フローデータを取得（顧客ごとに個別にクエリ）
+        customer_stages = {}
         
-        sales_flow_items = sales_flows_response.get('Items', [])
-        print(f"📋 Found {len(sales_flow_items)} sales flow items")
+        # 各顧客の営業フローデータを取得
+        for customer in all_customers:
+            customer_id = customer.get('id')
+            if not customer_id:
+                continue
+                
+            # 顧客の営業フローデータを取得
+            try:
+                response = sales_flows_table.query(
+                    KeyConditionExpression='PK = :pk',
+                    ExpressionAttributeValues={
+                        ':pk': f'CUSTOMER#{customer_id}'
+                    }
+                )
+                
+                items = response.get('Items', [])
+                print(f"📋 Customer {customer_id} has {len(items)} sales flow items")
+                print(f"📋 Sales flow items for customer {customer_id}: {items}")
+                
+                # 現在のステージを取得
+                current_stage = 'lead_generation'  # デフォルト
+                if len(items) == 0:
+                    print(f"🆕 New customer {customer_id} - no sales flow data, defaulting to lead_generation")
+                else:
+                    for item in items:
+                        print(f"📋 Processing item: {item}")
+                        if item.get('SK', '').startswith('STAGE#'):
+                            current_stage = item.get('stage', 'lead_generation')
+                            print(f"📊 Found stage data: {current_stage}")
+                            break
+                
+                customer_stages[customer_id] = current_stage
+                print(f"📊 Customer {customer_id} is in stage: {current_stage}")
+                
+            except Exception as e:
+                print(f"❌ Error getting sales flow for customer {customer_id}: {e}")
+                customer_stages[customer_id] = 'lead_generation'
         
         # ステージ別の顧客数をカウント
         stage_counts = {
             'lead_generation': 0,
             'qualification': 0,
             'initial_contact': 0,
+            'approach': 0,
             'needs_analysis': 0,
             'proposal': 0,
             'closing': 0,
@@ -126,31 +156,18 @@ def get_sales_flow_statistics(user_id: str) -> Dict[str, Any]:
             'follow_up': 0
         }
         
-        # 顧客ごとの現在ステージを追跡
-        customer_stages = {}
-        
-        for item in sales_flow_items:
-            customer_id = item.get('customerId')
-            if not customer_id:
-                continue
-                
-            # 現在のステージを取得
-            if item.get('SK', '').startswith('STAGE#'):
-                stage = item.get('stage', 'lead_generation')
-                customer_stages[customer_id] = stage
-        
-        # 3. 営業フローデータがない顧客は全て「リード獲得」ステージ
-        for customer in all_customers:
-            customer_id = customer.get('id')
-            if customer_id and customer_id not in customer_stages:
-                customer_stages[customer_id] = 'lead_generation'
-        
         print(f"📊 Customer stages: {customer_stages}")
         
         # ステージ別の顧客数をカウント
         for customer_id, stage in customer_stages.items():
+            print(f"📊 Counting customer {customer_id} in stage {stage}")
             if stage in stage_counts:
                 stage_counts[stage] += 1
+                print(f"📊 Stage {stage} count is now: {stage_counts[stage]}")
+            else:
+                print(f"❌ Unknown stage: {stage}")
+        
+        print(f"📊 Final stage counts: {stage_counts}")
         
         # ステージ定義（フロントエンドと一致）
         stage_definitions = [
@@ -170,10 +187,17 @@ def get_sales_flow_statistics(user_id: str) -> Dict[str, Any]:
             },
             {
                 'id': 'initial_contact',
-                'name': 'アプローチ',
+                'name': '初回コンタクト',
                 'description': '初回コンタクトを取る段階',
                 'color': 'bg-green-100 text-green-800',
                 'icon': '📞'
+            },
+            {
+                'id': 'approach',
+                'name': 'アプローチ',
+                'description': '顧客へのアプローチ段階',
+                'color': 'bg-indigo-100 text-indigo-800',
+                'icon': '🤝'
             },
             {
                 'id': 'needs_analysis',
