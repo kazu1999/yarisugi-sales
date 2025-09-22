@@ -12,7 +12,7 @@ import {
   Trash2, Eye, Share2, Copy, Bookmark, Tag, Paperclip, Image, 
   Mic, Smile, ThumbsUp, Heart, Star, Flag, Archive, FolderOpen, 
   Database, Shield, Lock, Unlock, Key, Info, HelpCircle, CheckCircle, 
-  XCircle, AlertTriangle, Brain, LineChart, GitBranch, LogOut
+  XCircle, AlertTriangle, Brain, LineChart, GitBranch, LogOut, X as XIcon
 } from 'lucide-react';
 
 // 新しいコンポーネントとカスタムフックのインポート
@@ -154,6 +154,7 @@ const YarisugiDashboard = () => {
   const [customersPerPage, setCustomersPerPage] = useState(50);
   const [showAddDatabase, setShowAddDatabase] = useState(false);
   const [aiModalJustOpened, setAiModalJustOpened] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // メール機能用の状態
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -1213,15 +1214,33 @@ const YarisugiDashboard = () => {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
+        {/* モバイルメニューボタン */}
+        <button
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="lg:hidden fixed top-4 left-4 z-50 bg-slate-800 text-slate-200 p-2 rounded-md hover:bg-slate-700 transition-colors"
+        >
+          {isMobileMenuOpen ? <XIcon className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
+
+        {/* モバイルメニューオーバーレイ */}
+        {isMobileMenuOpen && (
+          <div 
+            className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-30"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+        )}
+
         {/* サイドバー */}
-        <div className="w-48 sm:w-64 lg:w-72 bg-slate-800 text-slate-200 py-6 overflow-y-auto flex-shrink-0">
-          <NavItem label="トップページ" page="sales-flow-stats" active={activePage === 'sales-flow-stats'} onClick={setActivePage} />
-          <NavItem label="顧客一覧" page="customers" active={activePage === 'customers'} onClick={setActivePage} />
-          <NavItem label="AIメール" page="email" active={activePage === 'email'} onClick={setActivePage} />
-          <NavItem label="FAQ設定" page="faq" active={activePage === 'faq'} onClick={setActivePage} />
-          <NavItem label="ナレッジDB" page="database" active={activePage === 'database'} onClick={setActivePage} />
-          <NavItem label="基本情報入力" page="profile" active={activePage === 'profile'} onClick={setActivePage} />
-          <NavItem label="ID追加・プラン変更" page="idManage" active={activePage === 'idManage'} onClick={setActivePage} />
+        <div className={`w-48 sm:w-64 lg:w-72 bg-slate-800 text-slate-200 py-4 sm:py-6 overflow-y-auto flex-shrink-0 transition-transform duration-300 ${
+          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        } fixed lg:relative top-0 left-0 h-full z-40`}>
+          <NavItem label="トップページ" page="sales-flow-stats" active={activePage === 'sales-flow-stats'} onClick={(page) => { setActivePage(page); setIsMobileMenuOpen(false); }} />
+          <NavItem label="顧客一覧" page="customers" active={activePage === 'customers'} onClick={(page) => { setActivePage(page); setIsMobileMenuOpen(false); }} />
+          <NavItem label="AIメール" page="email" active={activePage === 'email'} onClick={(page) => { setActivePage(page); setIsMobileMenuOpen(false); }} />
+          <NavItem label="FAQ設定" page="faq" active={activePage === 'faq'} onClick={(page) => { setActivePage(page); setIsMobileMenuOpen(false); }} />
+          <NavItem label="ナレッジDB" page="database" active={activePage === 'database'} onClick={(page) => { setActivePage(page); setIsMobileMenuOpen(false); }} />
+          <NavItem label="基本情報入力" page="profile" active={activePage === 'profile'} onClick={(page) => { setActivePage(page); setIsMobileMenuOpen(false); }} />
+          <NavItem label="ID追加・プラン変更" page="idManage" active={activePage === 'idManage'} onClick={(page) => { setActivePage(page); setIsMobileMenuOpen(false); }} />
           {/* 機能追加要望フォーム（強調） */}
           <div className="mt-2 mx-3">
             <button
@@ -1233,6 +1252,7 @@ const YarisugiDashboard = () => {
               onClick={() => {
                 handleAdminTabClick();
                 setActivePage('featureRequest');
+                setIsMobileMenuOpen(false);
               }}
             >
               💬 機能追加要望フォーム
@@ -1241,7 +1261,7 @@ const YarisugiDashboard = () => {
         </div>
 
         {/* メインコンテンツ */}
-        <div className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+        <div className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto lg:ml-0">
 
           {activePage === 'sales-flow-stats' && (
             <SalesFlowStats />
