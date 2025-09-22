@@ -349,6 +349,81 @@ class AwsApiClient {
   async getServerData() {
     return this.request('/sync');
   }
+
+  // ダッシュボードデータ取得
+  async getDashboardData(params = {}) {
+    console.log('📊 ダッシュボードデータ取得:', params);
+    
+    // user_idを認証トークンから取得
+    const token = await this.getAuthToken();
+    const userId = this.getUserIdFromToken(token);
+    
+    const requestBody = {
+      ...params,
+      user_id: userId
+    };
+    
+    return this.request('/dashboard', {
+      method: 'POST',
+      body: JSON.stringify(requestBody)
+    });
+  }
+
+  // JWTトークンからユーザーIDを取得
+  getUserIdFromToken(token) {
+    if (!token) {
+      console.log('❌ トークンがありません');
+      return null;
+    }
+    
+    try {
+      // JWTトークンをデコード（簡易版）
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      console.log('🔍 トークンペイロード:', payload);
+      const userId = payload.sub || payload.user_id;
+      console.log('👤 ユーザーID:', userId);
+      return userId;
+    } catch (error) {
+      console.error('❌ トークンデコードエラー:', error);
+      return null;
+    }
+  }
+
+  // 営業フロー統計データ取得
+  async getSalesFlowStats() {
+    console.log('📊 営業フロー統計データ取得開始');
+    
+    try {
+      // user_idを認証トークンから取得
+      const token = await this.getAuthToken();
+      console.log('🔑 認証トークン取得:', token ? '成功' : '失敗');
+      
+      const userId = this.getUserIdFromToken(token);
+      console.log('👤 ユーザーID:', userId);
+      
+      if (!userId) {
+        throw new Error('ユーザーIDが取得できません。ログインしてください。');
+      }
+      
+      const requestBody = {
+        user_id: userId
+      };
+      
+      console.log('📤 リクエストボディ:', requestBody);
+      
+      const response = await this.request('/sales-flow-stats', {
+        method: 'POST',
+        body: JSON.stringify(requestBody)
+      });
+      
+      console.log('📦 営業フロー統計レスポンス:', response);
+      return response;
+      
+    } catch (error) {
+      console.error('❌ 営業フロー統計データ取得エラー:', error);
+      throw error;
+    }
+  }
 }
 
 // シングルトンインスタンス

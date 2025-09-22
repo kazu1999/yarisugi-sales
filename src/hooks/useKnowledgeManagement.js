@@ -36,6 +36,7 @@ export const useKnowledgeManagement = () => {
   // ファイルアップロード状態
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   // 認証情報
   const { user } = useAuth();
@@ -183,6 +184,7 @@ export const useKnowledgeManagement = () => {
   // ファイルアップロード処理
   const handleFileUpload = async (files) => {
     console.log('📁 Starting file upload process, files:', files.length);
+    setIsUploading(true);
     const newFiles = [];
     
     for (const file of files) {
@@ -260,6 +262,7 @@ export const useKnowledgeManagement = () => {
     }
     
     setUploadedFiles(prev => [...prev, ...newFiles]);
+    setIsUploading(false);
     return newFiles;
   };
 
@@ -403,6 +406,7 @@ export const useKnowledgeManagement = () => {
     uploadedFiles,
     setUploadedFiles,
     isDragOver,
+    isUploading,
     handleDragOver,
     handleDragLeave,
     handleDrop,

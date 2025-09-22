@@ -24,6 +24,7 @@ import KnowledgeManager from './components/knowledge/KnowledgeManager';
 import RagSearch from './components/knowledge/RagSearch';
 import CompanyProfileTab from './components/company/CompanyProfileTab';
 import EmailConnectionModal from './components/modals/EmailConnectionModal';
+import SalesFlowStats from './components/sales/SalesFlowStats';
 
 import EmailList from './components/EmailList';
 import EmailDetail from './components/EmailDetail';
@@ -140,10 +141,15 @@ const YarisugiDashboard = () => {
     deleteKnowledgeEntry,
     performRagSearch,
     handleFileUpload: handleKnowledgeFileUpload,
+    isDragOver: knowledgeIsDragOver,
+    isUploading: knowledgeIsUploading,
+    handleDragOver: handleKnowledgeDragOver,
+    handleDragLeave: handleKnowledgeDragLeave,
+    handleDrop: handleKnowledgeDrop,
     resetKnowledgeForm
   } = useKnowledgeManagement();
   
-  const [activePage, setActivePage] = useState('top');
+  const [activePage, setActivePage] = useState('sales-flow-stats');
   const [showApproval, setShowApproval] = useState(false);
   const [customersPerPage, setCustomersPerPage] = useState(50);
   const [showAddDatabase, setShowAddDatabase] = useState(false);
@@ -597,19 +603,6 @@ const YarisugiDashboard = () => {
   // ID管理関連の状態
   const [selectedCount, setSelectedCount] = useState(1);
   const [showModal, setShowModal] = useState(false);
-  const [formData, setFormData] = useState({
-    companyName: '',
-    customerName: '',
-    location: '',
-    industry: '',
-    siteUrl: '',
-    snsStatus: '',
-    lineId: '',
-    email: '',
-    salesPerson: '山田太郎',
-    status: '新規'
-  });
-  const [showReport, setShowReport] = useState(false);
 
   // 機能追加要望フォーム関連の状態
   const [featureRequestForm, setFeatureRequestForm] = useState({
@@ -639,17 +632,6 @@ const YarisugiDashboard = () => {
     }));
   };
 
-  const showReportPreview = () => {
-    setShowReport(true);
-  };
-
-  const regenerateReport = () => {
-    setShowReport(false);
-    // 少し遅延を入れて再生成の演出
-    setTimeout(() => {
-      setShowReport(true);
-    }, 500);
-  };
 
   const showApprovalScreen = () => {
     setShowApproval(true);
@@ -1233,7 +1215,7 @@ const YarisugiDashboard = () => {
       <div className="flex flex-1 overflow-hidden">
         {/* サイドバー */}
         <div className="w-48 sm:w-64 lg:w-72 bg-slate-800 text-slate-200 py-6 overflow-y-auto flex-shrink-0">
-          <NavItem label="トップページ" page="top" active={activePage === 'top'} onClick={setActivePage} />
+          <NavItem label="トップページ" page="sales-flow-stats" active={activePage === 'sales-flow-stats'} onClick={setActivePage} />
           <NavItem label="顧客一覧" page="customers" active={activePage === 'customers'} onClick={setActivePage} />
           <NavItem label="AIメール" page="email" active={activePage === 'email'} onClick={setActivePage} />
           <NavItem label="FAQ設定" page="faq" active={activePage === 'faq'} onClick={setActivePage} />
@@ -1260,253 +1242,11 @@ const YarisugiDashboard = () => {
 
         {/* メインコンテンツ */}
         <div className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
-          {activePage === 'top' && (
-            <div>
-              {/* 新規顧客登録 */}
-              <div className="bg-white rounded-xl p-6 shadow-sm mb-6">
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-bold text-slate-800">新規顧客登録</h2>
-                </div>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <FormGroup label="会社名">
-                    <Input
-                      value={formData.companyName}
-                      onChange={(value) => handleInputChange('companyName', value)}
-                      placeholder="株式会社〇〇"
-                    />
-                  </FormGroup>
-                  
-                  <FormGroup label="顧客名（担当者名）">
-                    <Input
-                      value={formData.customerName}
-                      onChange={(value) => handleInputChange('customerName', value)}
-                      placeholder="田中一郎"
-                    />
-                  </FormGroup>
-                  
-                  <FormGroup label="所在地">
-                    <Input
-                      value={formData.location}
-                      onChange={(value) => handleInputChange('location', value)}
-                      placeholder="東京都渋谷区"
-                    />
-                  </FormGroup>
-                  
-                  <FormGroup label="業種">
-                    <Select
-                      value={formData.industry}
-                      onChange={(value) => handleInputChange('industry', value)}
-                      placeholder="選択してください"
-                      options={['製造業', 'IT・通信', '小売・流通', '建設・不動産', 'サービス業', '金融・保険', '医療・福祉', 'その他']}
-                    />
-                  </FormGroup>
-                  
-                  <FormGroup label="サイトURL">
-                    <Input
-                      type="url"
-                      value={formData.siteUrl}
-                      onChange={(value) => handleInputChange('siteUrl', value)}
-                      placeholder="https://example.com"
-                    />
-                  </FormGroup>
-                  
-                  <FormGroup label="SNS運用状況">
-                    <Select
-                      value={formData.snsStatus}
-                      onChange={(value) => handleInputChange('snsStatus', value)}
-                      placeholder="選択してください"
-                      options={[
-                        '積極的に運用中（毎日投稿）',
-                        '定期的に運用中（週2-3回）',
-                        'たまに更新（月数回）',
-                        'アカウントはあるが更新なし',
-                        'SNS未運用'
-                      ]}
-                    />
-                  </FormGroup>
-                  
-                  <FormGroup label="LINE ID">
-                    <Input
-                      value={formData.lineId}
-                      onChange={(value) => handleInputChange('lineId', value)}
-                      placeholder="@example_line"
-                    />
-                  </FormGroup>
-                  
-                  <FormGroup label="メールアドレス">
-                    <Input
-                      type="email"
-                      value={formData.email}
-                      onChange={(value) => handleInputChange('email', value)}
-                      placeholder="example@email.com"
-                    />
-                  </FormGroup>
-                  
-                  <FormGroup label="担当営業">
-                    <Select
-                      value={formData.salesPerson}
-                      onChange={(value) => handleInputChange('salesPerson', value)}
-                      options={['山田太郎', '佐藤花子', '鈴木一郎']}
-                    />
-                  </FormGroup>
-                  
-                  <FormGroup label="ステータス">
-                    <Select
-                      value={formData.status}
-                      onChange={(value) => handleInputChange('status', value)}
-                      options={['新規', '商談中', '成約', '失注']}
-                    />
-                  </FormGroup>
-                </div>
-                
-                <div className="flex gap-4 mt-6">
-                  <Button>登録</Button>
-                  <Button onClick={showReportPreview}>レポートを抽出</Button>
-                  <Button variant="secondary">キャンセル</Button>
-                </div>
-              </div>
 
-
-
-              {/* レポートプレビュー */}
-              {showReport && (
-                <div className="bg-gray-100 rounded-xl p-8 mt-8">
-                  <div className="bg-white rounded-lg p-8 shadow-sm">
-                    <div className="flex justify-between items-center mb-6">
-                      <h2 className="text-2xl font-bold text-gray-800">提案資料予測レポート</h2>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={regenerateReport}
-                          className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
-                        >
-                          🔄 再生成
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <div className="mb-8">
-                      <h3 className="text-blue-600 mb-4">🎯 最適な提案フォーマット予測</h3>
-                      <div className="bg-blue-50 p-4 rounded-lg mb-4">
-                        <p className="font-semibold text-blue-800 mb-2">推奨提案書構成:</p>
-                        <ul className="space-y-2 pl-4">
-                          <li>• <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded font-bold">導入効果重視型</span> - ROI計算とコスト削減効果を前面に</li>
-                          <li>• 業界特化セクション: IT・通信業界向けソリューション事例</li>
-                          <li>• 競合比較表: 主要3社との機能・価格比較</li>
-                          <li>• 導入スケジュール: 段階的導入プランの提示</li>
-                        </ul>
-                      </div>
-                    </div>
-
-                    <div className="mb-8">
-                      <h3 className="text-blue-600 mb-4">💰 価格戦略予測</h3>
-                      <div className="grid md:grid-cols-2 gap-4">
-                        <div className="bg-green-50 p-4 rounded-lg">
-                          <h4 className="font-semibold text-green-800 mb-2">推奨価格帯</h4>
-                          <ul className="space-y-2 pl-4 text-green-700">
-                            <li>• 初期費用: <span className="bg-green-100 text-green-800 px-2 py-1 rounded font-bold">¥800,000-¥1,200,000</span></li>
-                            <li>• 月額費用: <span className="bg-green-100 text-green-800 px-2 py-1 rounded font-bold">¥150,000-¥200,000</span></li>
-                            <li>• 年間契約割引: 2ヶ月分無料</li>
-                          </ul>
-                        </div>
-                        <div className="bg-yellow-50 p-4 rounded-lg">
-                          <h4 className="font-semibold text-yellow-800 mb-2">価格正当化要素</h4>
-                          <ul className="space-y-2 pl-4 text-yellow-700">
-                            <li>• 24時間サポート体制</li>
-                            <li>• 業界特化カスタマイズ</li>
-                            <li>• データ移行・研修費用込み</li>
-                            <li>• 1年間の保守・更新無料</li>
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mb-8">
-                      <h3 className="text-blue-600 mb-4">📊 成約確率分析</h3>
-                      <div className="bg-purple-50 p-4 rounded-lg">
-                        <div className="grid md:grid-cols-3 gap-4">
-                          <div className="text-center">
-                            <div className="text-2xl font-bold text-purple-600">78%</div>
-                            <div className="text-sm text-purple-700">3ヶ月以内成約確率</div>
-                          </div>
-                          <div className="text-center">
-                            <div className="text-2xl font-bold text-purple-600">¥1,800,000</div>
-                            <div className="text-sm text-purple-700">予想年間契約額</div>
-                          </div>
-                          <div className="text-center">
-                            <div className="text-2xl font-bold text-purple-600">High</div>
-                            <div className="text-sm text-purple-700">優先度ランク</div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mb-8">
-                      <h3 className="text-blue-600 mb-4">🎯 提案戦略アドバイス</h3>
-                      <div className="space-y-4">
-                        <div className="bg-indigo-50 p-4 rounded-lg">
-                          <h4 className="font-semibold text-indigo-800 mb-2">✅ 強調すべきポイント</h4>
-                          <ul className="space-y-1 pl-4 text-indigo-700">
-                            <li>• 他社システムとの API連携による業務効率化</li>
-                            <li>• IT業界特有の課題解決事例（開発プロジェクト管理など）</li>
-                            <li>• スケーラブルな料金体系でビジネス成長に対応</li>
-                            <li>• セキュリティ強化による信頼性向上</li>
-                          </ul>
-                        </div>
-                        <div className="bg-orange-50 p-4 rounded-lg">
-                          <h4 className="font-semibold text-orange-800 mb-2">⚠️ 懸念点と対策</h4>
-                          <ul className="space-y-1 pl-4 text-orange-700">
-                            <li>• 既存システムからの移行リスク → 段階移行プランを提示</li>
-                            <li>• 初期投資の負担感 → ROI試算と分割払いオプション</li>
-                            <li>• 運用定着の不安 → 充実した研修・サポート体制をアピール</li>
-                          </ul>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mb-8">
-                      <h3 className="text-blue-600 mb-4">📋 次のアクションプラン</h3>
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <div className="grid md:grid-cols-2 gap-4">
-                          <div>
-                            <h4 className="font-semibold text-gray-800 mb-2">即実行項目</h4>
-                            <ul className="space-y-1 pl-4 text-gray-700">
-                              <li>• 業界特化デモ環境の準備</li>
-                              <li>• 競合比較資料の最新化</li>
-                              <li>• ROI計算シートの作成</li>
-                            </ul>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-gray-800 mb-2">今週中実行項目</h4>
-                            <ul className="space-y-1 pl-4 text-gray-700">
-                              <li>• 提案書ドラフト作成</li>
-                              <li>• 技術担当者との事前打ち合わせ</li>
-                              <li>• 契約条件の詳細検討</li>
-                            </ul>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-4 mt-6">
-                      <button className="bg-green-500 text-white px-6 py-2 rounded-lg hover:bg-green-600 transition-colors">
-                        📄 提案書テンプレート生成
-                      </button>
-                      <button className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors">
-                        📊 詳細分析レポート出力
-                      </button>
-                      <button 
-                        onClick={() => setShowReport(false)}
-                        className="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-300 transition-colors"
-                      >
-                        閉じる
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+          {activePage === 'sales-flow-stats' && (
+            <SalesFlowStats />
           )}
+
 
           {activePage === 'email' && (
             <div>
@@ -2388,10 +2128,15 @@ const YarisugiDashboard = () => {
                 setShowKnowledgeForm={setShowKnowledgeForm}
                 showRagSearch={showRagSearch}
                 setShowRagSearch={setShowRagSearch}
+                isDragOver={knowledgeIsDragOver}
+                isUploading={knowledgeIsUploading}
                 fetchKnowledgeEntry={fetchKnowledgeEntry}
                 createKnowledgeEntry={createKnowledgeEntry}
                 deleteKnowledgeEntry={deleteKnowledgeEntry}
                 handleFileUpload={handleKnowledgeFileUpload}
+                handleDragOver={handleKnowledgeDragOver}
+                handleDragLeave={handleKnowledgeDragLeave}
+                handleDrop={handleKnowledgeDrop}
                 resetKnowledgeForm={resetKnowledgeForm}
               />
             </div>

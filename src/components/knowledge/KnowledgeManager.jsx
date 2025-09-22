@@ -37,6 +37,7 @@ const KnowledgeManager = ({
   showRagSearch,
   setShowRagSearch,
   isDragOver,
+  isUploading,
   
   // 関数
   fetchKnowledgeEntry,
@@ -252,24 +253,38 @@ const KnowledgeManager = ({
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-          <p className="text-gray-600 mb-2">
-            ファイルをドラッグ&ドロップ、または
-          </p>
-          <label className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors">
-            <FileText className="w-4 h-4" />
-            ファイルを選択
-            <input
-              type="file"
-              multiple
-              onChange={handleFileSelect}
-              className="hidden"
-              accept=".txt,.md,.pdf,.doc,.docx"
-            />
-          </label>
-          <p className="text-sm text-gray-500 mt-2">
-            対応形式: PDF (最大10MB)
-          </p>
+          {isUploading ? (
+            <div className="flex flex-col items-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-2"></div>
+              <p className="text-blue-600 font-medium">
+                ファイルを処理中...
+              </p>
+              <p className="text-sm text-gray-500 mt-1">
+                しばらくお待ちください
+              </p>
+            </div>
+          ) : (
+            <>
+              <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+              <p className="text-gray-600 mb-2">
+                ファイルをドラッグ&ドロップ、または
+              </p>
+              <label className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer transition-colors">
+                <FileText className="w-4 h-4" />
+                ファイルを選択
+                <input
+                  type="file"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  accept=".txt,.md,.pdf,.doc,.docx"
+                />
+              </label>
+              <p className="text-sm text-gray-500 mt-2">
+                対応形式: PDF (最大10MB)
+              </p>
+            </>
+          )}
         </div>
       </div>
 

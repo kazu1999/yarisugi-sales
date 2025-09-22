@@ -33,6 +33,11 @@ const FileManagementTab = ({ customerId, currentUser }) => {
     }
   }, [customerId]);
 
+  // uploading状態の変化を監視
+  useEffect(() => {
+    console.log('🔄 uploading状態が変化しました:', uploading);
+  }, [uploading]);
+
   // クリーンアップ
   useEffect(() => {
     return () => {
@@ -65,20 +70,30 @@ const FileManagementTab = ({ customerId, currentUser }) => {
   };
 
   const handleFileUpload = async () => {
+    console.log('🚀🚀🚀 handleFileUpload開始 🚀🚀🚀');
+    console.log('uploadForm:', uploadForm);
+    console.log('uploading状態:', uploading);
+    
     if (uploadForm.uploadType === 'url') {
+      console.log('📝 URLアップロードを実行');
       await handleUrlUpload();
     } else {
+      console.log('📁 ファイルアップロードを実行');
       await handleFileUploadInternal();
     }
   };
 
   const handleFileUploadInternal = async () => {
+    console.log('🔥🔥🔥 handleFileUploadInternal開始 🔥🔥🔥');
+    console.log('uploadForm.fileContent:', uploadForm.fileContent);
+    
     if (!uploadForm.fileContent) {
       alert('ファイルを選択してください');
       return;
     }
 
     try {
+      console.log('🔄 ファイルアップロード開始 - uploading状態をtrueに設定');
       setUploading(true);
       
       // ファイルをBase64エンコード
@@ -111,13 +126,22 @@ const FileManagementTab = ({ customerId, currentUser }) => {
         } else {
           alert('アップロードに失敗しました');
         }
+        console.log('✅ ファイルアップロード完了 - uploading状態をfalseに設定');
+        setUploading(false);
+      };
+      
+      reader.onerror = () => {
+        console.error('ファイル読み取りエラー');
+        alert('ファイルの読み取りに失敗しました');
+        console.log('❌ ファイル読み取りエラー - uploading状態をfalseに設定');
+        setUploading(false);
       };
       
       reader.readAsDataURL(uploadForm.fileContent);
     } catch (error) {
       console.error('ファイルアップロードエラー:', error);
       alert('アップロードに失敗しました');
-    } finally {
+      console.log('❌ エラー発生 - uploading状態をfalseに設定');
       setUploading(false);
     }
   };
@@ -449,10 +473,32 @@ const FileManagementTab = ({ customerId, currentUser }) => {
                 <X className="w-5 h-5" />
               </button>
             </div>
+            
+            {/* デバッグ用の状態表示 */}
+            <div className="mb-4 p-2 bg-gray-100 rounded text-xs">
+              <p>uploading状態: {uploading.toString()}</p>
+              <p>uploadForm.uploadType: {uploadForm.uploadType}</p>
+              <p>uploadForm.fileContent: {uploadForm.fileContent ? uploadForm.fileContent.name : 'null'}</p>
+              <p>uploadForm.url: {uploadForm.url}</p>
+            </div>
 
-            <div className="space-y-4">
-              {/* アップロードタイプ選択 */}
-              <div>
+            {uploading ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+                <p className="text-blue-600 font-medium text-lg">
+                  ファイルを処理中...
+                </p>
+                <p className="text-sm text-gray-500 mt-2">
+                  しばらくお待ちください
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  uploading状態: {uploading.toString()}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* アップロードタイプ選択 */}
+                <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   アップロードタイプ
                 </label>
@@ -636,12 +682,20 @@ const FileManagementTab = ({ customerId, currentUser }) => {
                 <button
                   onClick={handleFileUpload}
                   disabled={uploading || (uploadForm.uploadType === 'file' && !uploadForm.fileContent) || (uploadForm.uploadType === 'url' && !uploadForm.url.trim())}
-                  className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  {uploading ? 'アップロード中...' : 'アップロード'}
+                  {uploading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      アップロード中...
+                    </>
+                  ) : (
+                    'アップロード'
+                  )}
                 </button>
               </div>
-            </div>
+              </div>
+            )}
           </div>
         </div>
       )}

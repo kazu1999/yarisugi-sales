@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 // タブコンポーネントのインポート
 import OverviewTab from './tabs/OverviewTab';
 import FileManagementTab from './tabs/FileManagementTab';
+import SalesFlowTab from './tabs/SalesFlowTab';
 
 
 // モーダルコンポーネントのインポート
@@ -41,6 +42,7 @@ const CustomerDetail = ({
 
   const tabs = [
     { id: '概要', label: '概要', icon: '📊' },
+    { id: '営業フロー', label: '営業フロー', icon: '🎯' },
     { id: 'ファイル管理', label: 'ファイル管理', icon: '📁' },
     { id: 'メール管理', label: 'メール管理', icon: '📧' },
     { id: 'LINE管理', label: 'LINE管理', icon: '💬' },
@@ -59,6 +61,14 @@ const CustomerDetail = ({
             snsStatusOptions={snsStatusOptions}
             customerStatuses={customerStatuses}
             selectedCustomer={selectedCustomer}
+          />
+        );
+
+      case '営業フロー':
+        return (
+          <SalesFlowTab
+            customerId={selectedCustomer.id}
+            customerData={selectedCustomer}
           />
         );
 

@@ -235,6 +235,53 @@ resource "aws_dynamodb_table" "knowledge" {
   }
 }
 
+# 営業フロー管理用テーブル
+resource "aws_dynamodb_table" "sales_flows" {
+  name           = "${var.project_name}-sales-flows-${var.environment}"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "PK"
+  range_key      = "SK"
+
+  attribute {
+    name = "PK"
+    type = "S"
+  }
+
+  attribute {
+    name = "SK"
+    type = "S"
+  }
+
+  attribute {
+    name = "customerId"
+    type = "S"
+  }
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name     = "CustomerIdIndex"
+    hash_key = "customerId"
+    range_key = "SK"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name     = "UserIdIndex"
+    hash_key = "userId"
+    range_key = "SK"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
 # ベクトル埋め込み用テーブル
 resource "aws_dynamodb_table" "knowledge_vectors" {
   name           = "${var.project_name}-knowledge-vectors-${var.environment}"
@@ -589,12 +636,16 @@ resource "aws_iam_role_policy" "lambda_policy" {
           aws_dynamodb_table.knowledge.arn,
           aws_dynamodb_table.knowledge_vectors.arn,
           aws_dynamodb_table.sales_processes.arn,
+          aws_dynamodb_table.sales_flows.arn,
           aws_dynamodb_table.company_profiles.arn,
           aws_dynamodb_table.proposals.arn,
           aws_dynamodb_table.email_connections.arn,
           aws_dynamodb_table.customer_files.arn,
           aws_dynamodb_table.feature_requests.arn,
-          "${aws_dynamodb_table.feature_requests.arn}/index/*"
+          "${aws_dynamodb_table.customers.arn}/index/*",
+          "${aws_dynamodb_table.customer_files.arn}/index/*",
+          "${aws_dynamodb_table.feature_requests.arn}/index/*",
+          "${aws_dynamodb_table.sales_flows.arn}/index/*"
         ]
       },
       {
@@ -838,12 +889,156 @@ resource "aws_api_gateway_method" "ai_generate_options" {
   authorization = "NONE"
 }
 
+# 営業フローAPIリソース
+resource "aws_api_gateway_resource" "sales_flow" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "sales-flow"
+}
+
+# 営業フロー (POST /sales-flow)
+resource "aws_api_gateway_method" "sales_flow_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.sales_flow.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# 営業フロー統合
+resource "aws_api_gateway_integration" "sales_flow_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.sales_flow.id
+  http_method = aws_api_gateway_method.sales_flow_post.http_method
+  integration_http_method = "POST"
+  type = "AWS_PROXY"
+  uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.sales_flow.arn}/invocations"
+}
+
+# CORS用のOPTIONSメソッド (sales-flow)
+resource "aws_api_gateway_method" "sales_flow_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.sales_flow.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# CORS用のOPTIONS統合 (sales-flow)
+resource "aws_api_gateway_integration" "sales_flow_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.sales_flow.id
+  http_method = aws_api_gateway_method.sales_flow_options.http_method
+  type = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# CORS用のOPTIONSレスポンス (sales-flow)
+resource "aws_api_gateway_method_response" "sales_flow_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.sales_flow.id
+  http_method = aws_api_gateway_method.sales_flow_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+# CORS用のOPTIONS統合レスポンス (sales-flow)
+resource "aws_api_gateway_integration_response" "sales_flow_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.sales_flow.id
+  http_method = aws_api_gateway_method.sales_flow_options.http_method
+  status_code = aws_api_gateway_method_response.sales_flow_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+}
+
+
+# 営業フロー統計 (POST /sales-flow-stats)
+resource "aws_api_gateway_resource" "sales_flow_stats" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "sales-flow-stats"
+}
+
+# 営業フロー統計 (POST /sales-flow-stats)
+resource "aws_api_gateway_method" "sales_flow_stats_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.sales_flow_stats.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# 営業フロー統計統合
+resource "aws_api_gateway_integration" "sales_flow_stats_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.sales_flow_stats.id
+  http_method = aws_api_gateway_method.sales_flow_stats_post.http_method
+  integration_http_method = "POST"
+  type = "AWS_PROXY"
+  uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.sales_flow_stats.arn}/invocations"
+}
+
+# CORS用のOPTIONSメソッド (sales-flow-stats)
+resource "aws_api_gateway_method" "sales_flow_stats_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.sales_flow_stats.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# CORS用のOPTIONS統合 (sales-flow-stats)
+resource "aws_api_gateway_integration" "sales_flow_stats_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.sales_flow_stats.id
+  http_method = aws_api_gateway_method.sales_flow_stats_options.http_method
+  type = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# CORS用のOPTIONSレスポンス (sales-flow-stats)
+resource "aws_api_gateway_method_response" "sales_flow_stats_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.sales_flow_stats.id
+  http_method = aws_api_gateway_method.sales_flow_stats_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+# CORS用のOPTIONS統合レスポンス (sales-flow-stats)
+resource "aws_api_gateway_integration_response" "sales_flow_stats_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.sales_flow_stats.id
+  http_method = aws_api_gateway_method.sales_flow_stats_options.http_method
+  status_code = aws_api_gateway_method_response.sales_flow_stats_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+}
+
 # FAQチャットAPIリソース
 resource "aws_api_gateway_resource" "faq_chat" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   parent_id   = aws_api_gateway_rest_api.main.root_resource_id
   path_part   = "faq-chat"
 }
+
 
 # FAQチャット (POST /faq-chat)
 resource "aws_api_gateway_method" "faq_chat_post" {
@@ -1450,6 +1645,24 @@ resource "aws_lambda_permission" "feature_request" {
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
 }
 
+# 営業フロー管理Lambdaの権限
+resource "aws_lambda_permission" "sales_flow" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.sales_flow.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
+# 営業フロー統計Lambda権限
+resource "aws_lambda_permission" "sales_flow_stats" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.sales_flow_stats.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
 # Lambda関数の環境変数設定
 resource "aws_lambda_function" "customers_api" {
   filename         = "../lambda_functions/customers_lambda/customers_lambda.zip"
@@ -1725,6 +1938,29 @@ resource "aws_lambda_function" "email_fetcher" {
   }
 }
 
+# 営業フロー管理Lambda関数
+resource "aws_lambda_function" "sales_flow" {
+  filename         = "../lambda_functions/sales_flow/sales_flow_lambda.zip"
+  function_name    = "${var.project_name}-sales-flow-${var.environment}"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "sales_flow.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 30
+  memory_size     = 256
+  source_code_hash = filebase64sha256("../lambda_functions/sales_flow/sales_flow_lambda.zip")
+
+  environment {
+    variables = {
+      SALES_FLOWS_TABLE = aws_dynamodb_table.sales_flows.name
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
 # メール送信Lambda関数
 resource "aws_lambda_function" "email_sender" {
   filename         = "../lambda_functions/email_sender/email_sender_lambda.zip"
@@ -1811,6 +2047,31 @@ resource "aws_lambda_function" "feature_request" {
     variables = {
       FEATURE_REQUESTS_TABLE = aws_dynamodb_table.feature_requests.name
       ADMIN_USERS = "admin-user-id-1,admin-user-id-2"  # 管理者ユーザーIDを設定
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+
+# 営業フロー統計Lambda関数
+resource "aws_lambda_function" "sales_flow_stats" {
+  filename         = "../lambda_functions/sales_flow_stats/sales_flow_stats_lambda.zip"
+  function_name    = "${var.project_name}-sales-flow-stats-${var.environment}"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "sales_flow_stats.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 30
+  memory_size     = 256
+  source_code_hash = filebase64sha256("../lambda_functions/sales_flow_stats/sales_flow_stats_lambda.zip")
+
+  environment {
+    variables = {
+      SALES_FLOWS_TABLE = aws_dynamodb_table.sales_flows.name
+      CUSTOMERS_TABLE = aws_dynamodb_table.customers.name
     }
   }
 
