@@ -547,6 +547,90 @@ resource "aws_dynamodb_table" "feature_requests" {
   }
 }
 
+# LINE公式アカウント連携テーブル
+resource "aws_dynamodb_table" "line_integrations" {
+  name           = "${var.project_name}-line-integrations-${var.environment}"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "PK"
+  range_key      = "SK"
+
+  attribute {
+    name = "PK"
+    type = "S"
+  }
+
+  attribute {
+    name = "SK"
+    type = "S"
+  }
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name     = "UserIdIndex"
+    hash_key = "userId"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# LINEチャット履歴テーブル
+resource "aws_dynamodb_table" "line_chats" {
+  name           = "${var.project_name}-line-chats-${var.environment}"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "PK"
+  range_key      = "SK"
+
+  attribute {
+    name = "PK"
+    type = "S"
+  }
+
+  attribute {
+    name = "SK"
+    type = "S"
+  }
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  attribute {
+    name = "lineId"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name     = "UserIdIndex"
+    hash_key = "userId"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name     = "LineIdIndex"
+    hash_key = "lineId"
+    projection_type = "ALL"
+  }
+
+  ttl {
+    attribute_name = "ttl"
+    enabled        = true
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
 # Cognito User Pool
 resource "aws_cognito_user_pool" "main" {
   name = "${var.project_name}-user-pool-${var.environment}"
@@ -642,10 +726,14 @@ resource "aws_iam_role_policy" "lambda_policy" {
           aws_dynamodb_table.email_connections.arn,
           aws_dynamodb_table.customer_files.arn,
           aws_dynamodb_table.feature_requests.arn,
+          aws_dynamodb_table.line_integrations.arn,
+          aws_dynamodb_table.line_chats.arn,
           "${aws_dynamodb_table.customers.arn}/index/*",
           "${aws_dynamodb_table.customer_files.arn}/index/*",
           "${aws_dynamodb_table.feature_requests.arn}/index/*",
-          "${aws_dynamodb_table.sales_flows.arn}/index/*"
+          "${aws_dynamodb_table.sales_flows.arn}/index/*",
+          "${aws_dynamodb_table.line_integrations.arn}/index/*",
+          "${aws_dynamodb_table.line_chats.arn}/index/*"
         ]
       },
       {
@@ -1030,6 +1118,86 @@ resource "aws_api_gateway_integration_response" "sales_flow_stats_options_200" {
     "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS'"
     "method.response.header.Access-Control-Allow-Origin" = "'*'"
   }
+}
+
+# LINE連携APIリソース
+resource "aws_api_gateway_resource" "line_integration" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "line-integration"
+}
+
+# LINE連携 (POST /line-integration)
+resource "aws_api_gateway_method" "line_integration_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.line_integration.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# LINE連携統合
+resource "aws_api_gateway_integration" "line_integration_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.line_integration.id
+  http_method = aws_api_gateway_method.line_integration_post.http_method
+  integration_http_method = "POST"
+  type = "AWS_PROXY"
+  uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.line_integration.arn}/invocations"
+}
+
+# CORS用のOPTIONSメソッド (line-integration)
+resource "aws_api_gateway_method" "line_integration_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.line_integration.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# CORS用のOPTIONS統合 (line-integration)
+resource "aws_api_gateway_integration" "line_integration_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.line_integration.id
+  http_method = aws_api_gateway_method.line_integration_options.http_method
+  type = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# CORS用のOPTIONSメソッドレスポンス (line-integration)
+resource "aws_api_gateway_method_response" "line_integration_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.line_integration.id
+  http_method = aws_api_gateway_method.line_integration_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+# CORS用のOPTIONS統合レスポンス (line-integration)
+resource "aws_api_gateway_integration_response" "line_integration_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.line_integration.id
+  http_method = aws_api_gateway_method.line_integration_options.http_method
+  status_code = aws_api_gateway_method_response.line_integration_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+}
+
+# Lambda関数の実行権限 (line-integration)
+resource "aws_lambda_permission" "line_integration" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.line_integration.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
 }
 
 # FAQチャットAPIリソース
@@ -2072,6 +2240,31 @@ resource "aws_lambda_function" "sales_flow_stats" {
     variables = {
       SALES_FLOWS_TABLE = aws_dynamodb_table.sales_flows.name
       CUSTOMERS_TABLE = aws_dynamodb_table.customers.name
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# LINE連携Lambda関数
+resource "aws_lambda_function" "line_integration" {
+  filename         = "../lambda_functions/line_integration/line_integration_lambda.zip"
+  function_name    = "${var.project_name}-line-integration-${var.environment}"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "line_integration.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 30
+  memory_size     = 256
+  source_code_hash = filebase64sha256("../lambda_functions/line_integration/line_integration_lambda.zip")
+
+  environment {
+    variables = {
+      LINE_INTEGRATIONS_TABLE = aws_dynamodb_table.line_integrations.name
+      LINE_CHATS_TABLE = aws_dynamodb_table.line_chats.name
+      FAQS_TABLE = aws_dynamodb_table.faqs.name
     }
   }
 
@@ -4273,5 +4466,7 @@ output "dynamodb_tables" {
     email_connections = aws_dynamodb_table.email_connections.name
     customer_files  = aws_dynamodb_table.customer_files.name
     feature_requests = aws_dynamodb_table.feature_requests.name
+    line_integrations = aws_dynamodb_table.line_integrations.name
+    line_chats      = aws_dynamodb_table.line_chats.name
   }
 } 

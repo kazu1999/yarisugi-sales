@@ -377,8 +377,15 @@ class AwsApiClient {
     }
     
     try {
-      // JWTトークンをデコード（簡易版）
-      const payload = JSON.parse(atob(token.split('.')[1]));
+      // JWTトークンをデコード（Base64URL対応）
+      const parts = token.split('.');
+      if (parts.length !== 3) {
+        console.error('❌ 無効なJWTトークン形式');
+        return null;
+      }
+      
+      // Base64URLデコード
+      const payload = JSON.parse(this.base64UrlDecode(parts[1]));
       console.log('🔍 トークンペイロード:', payload);
       const userId = payload.sub || payload.user_id;
       console.log('👤 ユーザーID:', userId);
@@ -389,6 +396,19 @@ class AwsApiClient {
     }
   }
 
+  // Base64URLデコード関数
+  base64UrlDecode(str) {
+    // Base64URLをBase64に変換
+    str = str.replace(/-/g, '+').replace(/_/g, '/');
+    
+    // パディングを追加
+    while (str.length % 4) {
+      str += '=';
+    }
+    
+    return atob(str);
+  }
+
   // 営業フロー統計データ取得
   async getSalesFlowStats() {
     console.log('📊 営業フロー統計データ取得開始');
@@ -397,6 +417,10 @@ class AwsApiClient {
       // user_idを認証トークンから取得
       const token = await this.getAuthToken();
       console.log('🔑 認証トークン取得:', token ? '成功' : '失敗');
+      
+      if (!token) {
+        throw new Error('認証トークンが取得できません。ログインしてください。');
+      }
       
       const userId = this.getUserIdFromToken(token);
       console.log('👤 ユーザーID:', userId);
@@ -424,6 +448,7 @@ class AwsApiClient {
       throw error;
     }
   }
+
 }
 
 // シングルトンインスタンス

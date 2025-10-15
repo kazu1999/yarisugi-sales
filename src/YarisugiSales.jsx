@@ -1267,14 +1267,13 @@ const YarisugiDashboard = () => {
             <SalesFlowStats />
           )}
 
-
           {activePage === 'email' && (
             <div>
               <div className="mb-6">
                 <h1 className="text-2xl font-bold text-gray-900">AIメール</h1>
                 <p className="text-gray-600 mt-2">メールアカウントの接続とメール管理・FAQをもとにしたAI返信提案</p>
-              </div>
-
+                </div>
+                
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
                 
                 <div className="p-6">
@@ -1329,28 +1328,28 @@ const YarisugiDashboard = () => {
                           <Mail className="w-4 h-4" />
                           メール一覧表示
                         </Button>
-                </div>
+                      </div>
                     </div>
                   )}
-                </div>
-              </div>
+                      </div>
+                    </div>
             </div>
           )}
 
           {activePage === 'faq' && (
-                    <div>
+            <div>
               <div className="mb-6">
                 <h1 className="text-2xl font-bold text-gray-900">FAQ管理システム</h1>
                 <p className="text-gray-600 mt-2">よくある質問の管理とAI自動生成</p>
-                </div>
-                
+              </div>
+
               {/* デバッグ情報 */}
               <div className="mb-4 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
                 <p>Debug: faqs.length = {faqs.length}</p>
                 <p>Debug: filteredFaqs.length = {filteredFaqs.length}</p>
                 <p>Debug: loading = {faqsLoading.toString()}</p>
                 <p>Debug: error = {faqsError || 'なし'}</p>
-                    <button 
+                  <button 
                   onClick={() => {
                     console.log('🔄 手動でFAQデータ再取得');
                     fetchFaqs();
@@ -1358,14 +1357,14 @@ const YarisugiDashboard = () => {
                   className="mt-2 px-2 py-1 bg-blue-500 text-white rounded text-xs"
                 >
                   FAQデータ再取得
-                    </button>
+                  </button>
                 </div>
-                
+
               {/* エラーメッセージ */}
               {faqsError && (
                 <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
                   <p className="text-red-800">{faqsError}</p>
-                      </div>
+            </div>
           )}
 
               <div className="bg-white rounded-xl shadow-sm overflow-hidden">
