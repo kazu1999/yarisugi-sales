@@ -631,6 +631,51 @@ resource "aws_dynamodb_table" "line_chats" {
   }
 }
 
+# ナレッジチャット履歴テーブル
+resource "aws_dynamodb_table" "knowledge_chats" {
+  name           = "${var.project_name}-knowledge-chats-${var.environment}"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "PK"
+  range_key      = "SK"
+
+  attribute {
+    name = "PK"
+    type = "S"
+  }
+
+  attribute {
+    name = "SK"
+    type = "S"
+  }
+
+  attribute {
+    name = "userId"
+    type = "S"
+  }
+
+  attribute {
+    name = "chatId"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name     = "UserIdIndex"
+    hash_key = "userId"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name     = "ChatIdIndex"
+    hash_key = "chatId"
+    projection_type = "ALL"
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
 # Cognito User Pool
 resource "aws_cognito_user_pool" "main" {
   name = "${var.project_name}-user-pool-${var.environment}"
@@ -728,12 +773,14 @@ resource "aws_iam_role_policy" "lambda_policy" {
           aws_dynamodb_table.feature_requests.arn,
           aws_dynamodb_table.line_integrations.arn,
           aws_dynamodb_table.line_chats.arn,
+          aws_dynamodb_table.knowledge_chats.arn,
           "${aws_dynamodb_table.customers.arn}/index/*",
           "${aws_dynamodb_table.customer_files.arn}/index/*",
           "${aws_dynamodb_table.feature_requests.arn}/index/*",
           "${aws_dynamodb_table.sales_flows.arn}/index/*",
           "${aws_dynamodb_table.line_integrations.arn}/index/*",
-          "${aws_dynamodb_table.line_chats.arn}/index/*"
+          "${aws_dynamodb_table.line_chats.arn}/index/*",
+          "${aws_dynamodb_table.knowledge_chats.arn}/index/*"
         ]
       },
       {
@@ -1196,6 +1243,112 @@ resource "aws_lambda_permission" "line_integration" {
   statement_id  = "AllowExecutionFromAPIGateway"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.line_integration.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
+}
+
+# ナレッジチャットLambda関数
+resource "aws_lambda_function" "knowledge_chat" {
+  filename         = "../lambda_functions/knowledge_chat/knowledge_chat_lambda.zip"
+  function_name    = "${var.project_name}-knowledge-chat-${var.environment}"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "knowledge_chat.lambda_handler"
+  runtime         = "python3.11"
+  timeout         = 30
+  memory_size     = 256
+  source_code_hash = filebase64sha256("../lambda_functions/knowledge_chat/knowledge_chat_lambda.zip")
+
+  environment {
+    variables = {
+      KNOWLEDGE_TABLE        = aws_dynamodb_table.knowledge.name
+      KNOWLEDGE_VECTORS_TABLE = aws_dynamodb_table.knowledge_vectors.name
+      KNOWLEDGE_CHATS_TABLE  = aws_dynamodb_table.knowledge_chats.name
+      OPENAI_API_KEY         = var.openai_api_key
+    }
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+}
+
+# ナレッジチャットAPIリソース
+resource "aws_api_gateway_resource" "knowledge_chat" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  parent_id   = aws_api_gateway_rest_api.main.root_resource_id
+  path_part   = "knowledge-chat"
+}
+
+# ナレッジチャット (POST /knowledge-chat)
+resource "aws_api_gateway_method" "knowledge_chat_post" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.knowledge_chat.id
+  http_method   = "POST"
+  authorization = "COGNITO_USER_POOLS"
+  authorizer_id = aws_api_gateway_authorizer.cognito.id
+}
+
+# ナレッジチャット統合
+resource "aws_api_gateway_integration" "knowledge_chat_post" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.knowledge_chat.id
+  http_method = aws_api_gateway_method.knowledge_chat_post.http_method
+  integration_http_method = "POST"
+  type = "AWS_PROXY"
+  uri = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.knowledge_chat.arn}/invocations"
+}
+
+# CORS用のOPTIONSメソッド (knowledge-chat)
+resource "aws_api_gateway_method" "knowledge_chat_options" {
+  rest_api_id   = aws_api_gateway_rest_api.main.id
+  resource_id   = aws_api_gateway_resource.knowledge_chat.id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+# CORS用のOPTIONS統合 (knowledge-chat)
+resource "aws_api_gateway_integration" "knowledge_chat_options" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.knowledge_chat.id
+  http_method = aws_api_gateway_method.knowledge_chat_options.http_method
+  type = "MOCK"
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+# CORS用のOPTIONSメソッドレスポンス (knowledge-chat)
+resource "aws_api_gateway_method_response" "knowledge_chat_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.knowledge_chat.id
+  http_method = aws_api_gateway_method.knowledge_chat_options.http_method
+  status_code = "200"
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+# CORS用のOPTIONS統合レスポンス (knowledge-chat)
+resource "aws_api_gateway_integration_response" "knowledge_chat_options_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.knowledge_chat.id
+  http_method = aws_api_gateway_method.knowledge_chat_options.http_method
+  status_code = aws_api_gateway_method_response.knowledge_chat_options_200.status_code
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+}
+
+# Lambda関数の実行権限 (knowledge-chat)
+resource "aws_lambda_permission" "knowledge_chat" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.knowledge_chat.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.main.execution_arn}/*/*"
 }
@@ -4468,5 +4621,6 @@ output "dynamodb_tables" {
     feature_requests = aws_dynamodb_table.feature_requests.name
     line_integrations = aws_dynamodb_table.line_integrations.name
     line_chats      = aws_dynamodb_table.line_chats.name
+    knowledge_chats = aws_dynamodb_table.knowledge_chats.name
   }
 } 

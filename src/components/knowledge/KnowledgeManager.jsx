@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Search, 
   Plus, 
@@ -13,8 +13,10 @@ import {
   MessageSquare,
   Trash2,
   ExternalLink,
-  Download
+  Download,
+  MessageCircle
 } from 'lucide-react';
+import KnowledgeChat from './KnowledgeChat';
 
 
 const KnowledgeManager = ({
@@ -49,10 +51,17 @@ const KnowledgeManager = ({
   handleDrop,
   resetKnowledgeForm
 }) => {
+  const [showChat, setShowChat] = useState(false);
+  const [selectedKnowledgeIds, setSelectedKnowledgeIds] = useState([]);
 
   // 詳細表示用の状態
   const [selectedEntry, setSelectedEntry] = React.useState(null);
   const [showDetailModal, setShowDetailModal] = React.useState(false);
+
+  const openChat = (knowledgeIds = []) => {
+    setSelectedKnowledgeIds(knowledgeIds);
+    setShowChat(true);
+  };
 
   // ファイル選択ハンドラー
   const handleFileSelect = (e) => {
@@ -178,6 +187,20 @@ const KnowledgeManager = ({
               {/* カスタムツールチップ */}
               <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
                 ナレッジ全体をもとに検索
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+              </div>
+            </div>
+            <div className="relative group">
+              <button
+                onClick={() => openChat()}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                <MessageCircle className="w-4 h-4" />
+                ナレッジチャット
+              </button>
+              {/* カスタムツールチップ */}
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
+                AIとナレッジについてチャット
                 <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
               </div>
             </div>
@@ -643,6 +666,13 @@ const KnowledgeManager = ({
           </div>
         </div>
       )}
+
+      {/* ナレッジチャット */}
+      <KnowledgeChat
+        isOpen={showChat}
+        onClose={() => setShowChat(false)}
+        selectedKnowledgeIds={selectedKnowledgeIds}
+      />
     </div>
   );
 };

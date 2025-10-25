@@ -449,6 +449,70 @@ class AwsApiClient {
     }
   }
 
+  // ナレッジチャット機能
+  async sendKnowledgeChatMessage(message, chatId = null, knowledgeIds = []) {
+    try {
+      console.log('💬 ナレッジチャットメッセージ送信:', { message, chatId, knowledgeIds });
+      
+      const response = await this.request('/knowledge-chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'send_message',
+          message: message,
+          chatId: chatId,
+          knowledgeIds: knowledgeIds
+        })
+      });
+      
+      console.log('💬 ナレッジチャットメッセージ送信成功:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ ナレッジチャットメッセージ送信エラー:', error);
+      throw error;
+    }
+  }
+
+  async getKnowledgeChatHistory(chatId = null) {
+    try {
+      console.log('📚 ナレッジチャット履歴取得:', chatId);
+      
+      const response = await this.request('/knowledge-chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'get_chat_history',
+          chatId: chatId
+        })
+      });
+      
+      console.log('📚 ナレッジチャット履歴取得成功:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ ナレッジチャット履歴取得エラー:', error);
+      throw error;
+    }
+  }
+
+  async searchKnowledge(query, knowledgeIds = []) {
+    try {
+      console.log('🔍 ナレッジ検索:', { query, knowledgeIds });
+      
+      const response = await this.request('/knowledge-chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'search_knowledge',
+          query: query,
+          knowledgeIds: knowledgeIds
+        })
+      });
+      
+      console.log('🔍 ナレッジ検索成功:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ ナレッジ検索エラー:', error);
+      throw error;
+    }
+  }
+
 }
 
 // シングルトンインスタンス
