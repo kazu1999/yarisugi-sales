@@ -21,28 +21,17 @@ const KnowledgeChat = ({ isOpen, onClose, selectedKnowledgeIds = [] }) => {
     scrollToBottom();
   }, [messages]);
 
-  // チャット履歴を取得
+  // チャットを開いたときにナレッジオプションを読み込み、メッセージをリセット
   useEffect(() => {
     if (isOpen) {
-      loadChatHistory();
+      // 過去のログは表示しない（メッセージをリセット）
+      setMessages([]);
+      // 新しいチャットIDを生成
+      setChatId(null);
+      // ナレッジオプションを読み込み
       loadKnowledgeOptions();
     }
   }, [isOpen]);
-
-  const loadChatHistory = async () => {
-    try {
-      const response = await awsApiClient.getKnowledgeChatHistory(chatId);
-      if (response.success && response.data.chats) {
-        const allMessages = [];
-        Object.values(response.data.chats).forEach(chatMessages => {
-          allMessages.push(...chatMessages);
-        });
-        setMessages(allMessages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)));
-      }
-    } catch (error) {
-      console.error('チャット履歴の読み込みに失敗しました:', error);
-    }
-  };
 
   const loadKnowledgeOptions = async () => {
     try {
