@@ -18,6 +18,10 @@ if [ -z "$OPENAI_API_KEY" ]; then
     read -p "OpenAI API Keyを入力してください（空の場合はスキップ）: " OPENAI_API_KEY
 fi
 
+# Lambdaデプロイパッケージのビルド
+echo "🔨 Lambdaデプロイパッケージを作成中..."
+./create_lambda_packages.sh
+
 echo "🚀 AWSリソースのデプロイを開始します..."
 
 # Terraformディレクトリに移動
