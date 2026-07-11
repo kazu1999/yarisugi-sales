@@ -432,19 +432,21 @@ yarisugi-sales/
 │   │   ├── common/
 │   │   ├── company/
 │   │   ├── customer/
+│   │   │   └── CustomersTab.jsx      # [NEW] 顧客一覧のUI・ロジックを分離
+│   │   ├── faq/
+│   │   │   └── FaqTab.jsx            # [NEW] FAQ管理・AI生成のUI・ロジックを分離
 │   │   ├── knowledge/
 │   │   │   ├── KnowledgeManager.jsx
 │   │   │   └── KnowledgeChat.jsx
 │   │   └── modals/
-│   │       ├── EmailListModal.jsx
-│   │       ├── EmailDetailModal.jsx
-│   │       ├── EmailReplyModal.jsx
-│   │       └── ...
 │   ├── hooks/
 │   ├── utils/
 │   └── ...
 ├── backend/
+│   ├── create_lambda_packages.sh      # [NEW] Lambdaの自動パッケージング(zip)・ビルドスクリプト
+│   ├── deploy.sh                      # AWSデプロイスクリプト (パッケージ作成を自動で内包)
 │   ├── lambda_functions/
+│   │   ├── common/                    # [NEW] 共通DB処理モジュール (ソース管理上は1箇所に集約)
 │   │   ├── company_profile/
 │   │   ├── customers_lambda/
 │   │   ├── knowledge_manager/
@@ -463,22 +465,90 @@ yarisugi-sales/
 └── ...
 ```
 
+---
+
+## ⚡ 開発のセットアップ手順
+
+### 1. リポジトリの軽量化について
+リポジトリの全コミット履歴から不要な zip アーカイブやキャッシュが完全にパージ（削除）されたため、クローンに必要な容量はわずか **~8.8 MB** 程度になっています。重い `node_modules` やビルド生成物の `.zip` ファイルは `.gitignore` に登録されており、Git にコミットされることはありません。
+
+### 2. ローカルでの起動手順
+1. **リポジトリをクローン**:
+   ```bash
+   git clone git@github.com:kazu1999/yarisugi-sales.git
+   cd yarisugi-sales
+   ```
+2. **フロントエンド依存パッケージのインストール**:
+   ```bash
+   npm install
+   ```
+3. **ローカル環境変数の設定**:
+   `.env.local` ファイルを作成し、後述する必要な環境変数を入力します。
+4. **開発サーバーの起動**:
+   ```bash
+   npm run dev
+   ```
+
+---
+
+## 🚀 デプロイ手順
+
+このプロジェクトは、バックエンドが Terraform (AWS)、フロントエンドが Vite (React) で構成されており、バックエンドのビルド・デプロイは完全に自動化されています。
+
+### 1. 前提条件
+以下のツールがインストールおよび設定されていることを確認してください。
+- `terraform` (v1.5+)
+- `aws-cli` (AWS認証情報が正しくセットアップされていること)
+- `python3` および `pip3` (Lambda ビルド用)
+- `zip` コマンド
+
+### 2. バックエンド (AWS / Lambda / Terraform) のデプロイ
+`backend/` ディレクトリ配下に自動デプロイスクリプトが用意されています。
+
+1. **`backend/` ディレクトリに移動**:
+   ```bash
+   cd backend
+   ```
+2. **デプロイスクリプトを実行**:
+   ```bash
+   ./deploy.sh
+   ```
+   **💡 スクリプトが自動で行うこと:**
+   - [NEW] `./create_lambda_packages.sh` が自動的に起動します。
+   - `lambda_functions/common/` にある共通 DynamoDB 操作モジュールを、全 21 個の Lambda ディレクトリに一時的に自動同期します。
+   - 各関数の `requirements.txt` からライブラリを一時的にインストールし、AWSの標準環境にすでに組み込まれているライブラリ（`boto3`など）を自動除外して軽量なデプロイ zip を作成します。
+   - Terraform (`terraform init`, `terraform apply`) を実行し、AWS リソースへ適用します。
+3. **出力の確認**:
+   デプロイが成功すると、ターミナルに以下のようなフロントエンド用の環境変数値が表示されます。これらをコピーします。
+   ```text
+   VITE_COGNITO_USER_POOL_ID=ap-northeast-1_xxxxxx
+   VITE_COGNITO_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx
+   VITE_API_GATEWAY_ENDPOINT=https://xxxxxx.execute-api.ap-northeast-1.amazonaws.com/dev
+   ```
+
+### 3. フロントエンドのビルドとデプロイ
+1. コピーした環境変数をプロジェクトのルートにある `.env.local` ファイル（本番用は `.env.production`）に設定します。
+2. **本番用ビルドを実行**:
+   ```bash
+   npm run build
+   ```
+3. **ホスティング先へのデプロイ**:
+   `dist/` ディレクトリに本番用のアセットが生成されるので、これを Amazon S3 (CloudFront 連携) などの静的ホスティング先にデプロイします。
+
+---
+
 ## 環境設定
 
 ### 必要な環境変数
-- `VITE_API_ENDPOINT`: API Gateway エンドポイント
+- `VITE_API_GATEWAY_ENDPOINT`: API Gateway エンドポイント
 - `VITE_COGNITO_USER_POOL_ID`: Cognito User Pool ID
 - `VITE_COGNITO_CLIENT_ID`: Cognito Client ID
-- `VITE_REGION`: AWS リージョン
+- `VITE_AWS_REGION`: AWS リージョン
 
-### セットアップ手順
-1. リポジトリをクローン
-2. 依存関係をインストール: `npm install`
-3. 環境変数を設定
-4. 開発サーバーを起動: `npm run dev`
+---
 
 ## ライセンス
 MIT License
 
 ## 最終更新
-2025年1月20日 - ナレッジチャット機能実装完了
+2026年7月12日 - リポジトリの軽量化、コンポーネント分割リファクタリング、および Lambda 自動パッケージング機能の追加完了。
